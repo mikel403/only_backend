@@ -17,7 +17,6 @@ from django.contrib.auth.password_validation import validate_password
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ResetPassword(request):
-    print(request.data)
     new_password=request.data["new_password"]
     re_new_password=request.data["re_new_password"]
     user=request.user
@@ -29,3 +28,4 @@ def ResetPassword(request):
     user.set_password(new_password)
     user.save()
     return Response({'detail': 'The password has been set correctly'}, status=status.HTTP_200_OK)
+

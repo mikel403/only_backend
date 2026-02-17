@@ -39,20 +39,19 @@ class NodulePhysicistSerializer(serializers.ModelSerializer):
 class DescriptionSerializer(serializers.ModelSerializer):
     # physicist=PhysicistSerializer(read_only=True)
     nodule_id=serializers.IntegerField(read_only=True)
-    object_id=serializers.IntegerField(read_only=True)
-    content_type_id=serializers.IntegerField(read_only=True)
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    
     # physicist_id=serializers.IntegerField(read_only=True)
     class Meta:
         model=models.Description
-        fields=["id","shape","margin","orientation","echogenicity","posterior","calcification","suggestivity","birads","content_type_id","object_id","nodule_id"]        
+        fields=["id","shape","margin","orientation","echogenicity","posterior","calcification","suggestivity","birads","nodule_id", "user_id"]        
 
     def create(self,validated_data):
         nodule_id =self.context["nodule_id"]
-        user_id=self.context["user_id"]
-        # content_type_id=ContentType.objects.get_for_model(models.Physicist).id
-        content_type_id = self.context.get("content_type_id")  # Por defecto, Physicist
+        user = self.context["request"].user
         
-        return models.Description.objects.create(nodule_id=nodule_id,content_type_id=content_type_id,object_id=user_id, **validated_data)
+        
+        return models.Description.objects.create(nodule_id=nodule_id,user=user, **validated_data)
     
 # class DescriptionForNoduleSerializer(serializers.ModelSerializer):
 #     class Meta:
@@ -71,8 +70,10 @@ class NoduleDescriptionsSerializer(serializers.ModelSerializer):
         fields=["id","name", "image","new","descriptions","numDescriptions","numNodules2Times","numNodulesDescribed"]
 
     def get_descriptions(self, instance: models.Nodule):
+        request = self.context["request"]
+        user = request.user
         # Filter the descriptions based on physicist ID (assuming 'physicist_id' is a field in Description model)
-        descriptions = instance.descriptions.filter(physicist__user_id=self.context["request"].user.id)
+        descriptions = instance.descriptions.select_related("user").filter(user=user)
         
         # Serialize the filtered descriptions
         serializer = DescriptionSerializer(descriptions, many=True)

@@ -4,6 +4,7 @@ from django.http import Http404
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import OuterRef,Subquery
 from django.shortcuts import get_list_or_404, get_object_or_404
+from django.contrib.auth import get_user_model
 # from django.contrib.contenttypes.prefetch import GenericPrefetch
 
 from rest_framework.decorators import api_view, action,permission_classes
@@ -42,6 +43,7 @@ import random
 #         serializer.is_valid(raise_exception=True)
 #         serializer.save()
 #         return Response(serializer.data, status=status.HTTP_201_CREATED)
+User = get_user_model()
 def get_content_type(user_id):
     content_type_model = None
     if models.Physicist.objects.filter(user_id=user_id).exists():
@@ -51,6 +53,9 @@ def get_content_type(user_id):
     elif models.TestUser.objects.filter(user_id=user_id).exists():
 
         content_type_model = models.TestUser
+    
+    elif User.objects.filter(id=user_id).exists():
+        content_type_model = User
     else:
         raise ValueError("El tipo de usuario no es válido.")
     content_type_id = ContentType.objects.get_for_model(content_type_model).id
@@ -64,26 +69,21 @@ class DescriptionViewSet(ListModelMixin, CreateModelMixin,GenericViewSet):
         nodule_id = self.kwargs["nodule_pk"]
 
         # Obtener el user_id del usuario autenticado
-        user_id = self.request.user.id
-
-        # Determinar el tipo de usuario
-        content_type_id = get_content_type(user_id)
-
-        # Pasar el tipo de usuario, el nodule_id y el physicist_id al contexto
-        return {
-            "nodule_id": nodule_id,
-            "user_id": user_id,
-            "content_type_id": content_type_id
-        }
+        
+        context = super().get_serializer_context()
+        context["nodule_id"] = self.kwargs["nodule_pk"]
+        return context
+    
     def get_queryset(self):
-        return models.Description.objects.filter(nodule_id=self.kwargs["nodule_pk"],physicist__user_id=self.request.user.id)
+        
+        return models.Description.objects.filter(nodule_id=self.kwargs["nodule_pk"],user=self.request.user).select_related("user","ai")
     
 #We are going to create a view for an url that takes the last description of a nodule given by a physicist. This physicist will appear as first name in this url.
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def Description_detail(request,nodule_id,physicist__username):
     # description=get_object_or_404(models.Description.objects, nodule_id=nodule_id, physicist__user__first_name=physicist__first_name,)
-    description=models.Description.objects.filter(nodule_id=nodule_id,physicist__user__username=physicist__username).last()
+    description=models.Description.objects.filter(nodule_id=nodule_id,user__username=physicist__username,user__physicist__isnull=False).select_related("user").last()
     if description:
         serializer=serializers.DescriptionSerializer(description,many=False)
     else:
@@ -106,12 +106,12 @@ class DescriptionmeViewSet(ListModelMixin,GenericViewSet):
     def get_serializer_context(self):
         return {"request":self.request}
     def get_queryset(self):
-        return models.Description.objects.filter(physicist__user_id=self.request.user.id)
+        return models.Description.objects.filter(user=self.request.user).select_related("user")
     
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def DescriptionAIViewSet(request,AI_name):
-    description=models.Description.objects.filter(AI__name=AI_name)
+    description=models.Description.objects.filter(ai__name=AI_name)
     serializer=serializers.DescriptionSerializer(description,many=True)
     return Response(serializer.data)
         
@@ -149,6 +149,7 @@ class NodulePhysicistViewSet(ListModelMixin,CreateModelMixin,GenericViewSet):
     def get_serializer_context(self):
         return {"new":self.request.user.username}
     def get_queryset(self):
+        user = self.request.user
         limit=self.request.GET.get("_limit")
         init=self.request.GET.get("_start")
         name=self.request.GET.get("_name")
@@ -157,7 +158,7 @@ class NodulePhysicistViewSet(ListModelMixin,CreateModelMixin,GenericViewSet):
 
         user_id=self.request.user.id
         content_type_id=get_content_type(user_id)
-        described=models.Nodule.objects.prefetch_related("descriptions").filter(descriptions__content_type_id=content_type_id,descriptions__object_id=user_id)
+        described=models.Nodule.objects.prefetch_related("descriptions").filter(descriptions__user=self.request.user)
         
 
         if name:
@@ -187,7 +188,7 @@ class NodulePhysicistViewSet(ListModelMixin,CreateModelMixin,GenericViewSet):
             return described.annotate(numNodules=numNodules,numNodules2Times=numNodules2Times,numNodulesDescribed=numNodulesDescribed)
             
         
-        notDescribed=models.Nodule.objects.prefetch_related("descriptions").exclude(descriptions__content_type_id=content_type_id,descriptions__object_id=user_id)
+        notDescribed=models.Nodule.objects.prefetch_related("descriptions").exclude(descriptions__user=user)
         if name:
             notDescribed=notDescribed.filter(name__contains=name)
         if yourData=="true":
@@ -232,12 +233,13 @@ class NoduleDescriptionViewSet(ListModelMixin,GenericViewSet):
     def get_serializer_context(self):
         return {"request":self.request}
     def get_queryset(self):
+        user=self.request.user
         limit=self.request.GET.get("_limit")
         init=self.request.GET.get("_start")
         name=self.request.GET.get("_name")
         timesDescribed=self.request.GET.get("_timesDescribed")
         yourData=self.request.GET.get("_yourData")
-        described=models.Nodule.objects.prefetch_related("descriptions").filter(descriptions__physicist__user_id=self.request.user.id)
+        described=models.Nodule.objects.prefetch_related("descriptions").filter(descriptions__user=user)
 
         if name:
             described=described.filter(name__contains=name)
@@ -319,12 +321,12 @@ def AIDescription(request, nodule_id):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def Intercorrelation(request,physicist__username):
-    user_id=request.user.id
-    content_type_id=get_content_type(user_id)
+    user=request.user
+    
     # prefetch=GenericPrefetch("content_object",[models.Physicist.object.all()])
-    descriptions=models.Description.objects.select_related("content_type").filter(content_type_id=content_type_id,object_id=user_id)
+    descriptions=models.Description.objects.select_related("user").filter(user=user)
     desc_serializer=serializers.DescriptionSerializer(descriptions,many=True)
-    descriptions_other=models.Description.objects.select_related("content_type").filter(physicist__user__username=physicist__username)
+    descriptions_other=models.Description.objects.select_related("user").filter(user__username=physicist__username)
     desc_other_serializer=serializers.DescriptionSerializer(descriptions_other,many=True)
     if len(desc_other_serializer.data) == 0:
         return Response({"error": "Physician not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -334,9 +336,9 @@ def Intercorrelation(request,physicist__username):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def Intracorrelation(request):
-    user_id=request.user.id
-    content_type_id=get_content_type(user_id)
-    descriptions=models.Description.objects.select_related("content_type").filter(content_type_id=content_type_id,object_id=user_id)
+    user=request.user
+    
+    descriptions=models.Description.objects.select_related("user").filter(user=user)
     desc_serializer=serializers.DescriptionSerializer(descriptions,many=True)
     result=intracorrelation_fn(desc_serializer.data)
     return Response(result)
@@ -344,9 +346,9 @@ def Intracorrelation(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def Statistics(request):
-    user_id=request.user.id
-    content_type_id=get_content_type(user_id)
-    descriptions=models.Description.objects.select_related("content_type").filter(content_type_id=content_type_id,object_id=user_id)
+    user=request.user
+    
+    descriptions=models.Description.objects.select_related("user").filter(user=user)
     desc_serializer=serializers.DescriptionSerializer(descriptions,many=True)
     result=statistics_fn(desc_serializer.data)
     return Response(result)
@@ -354,12 +356,13 @@ def Statistics(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def Statistics_physician(request,physicist__username):
+    user=request.user
     if physicist__username=="Overall":
-        descriptions=models.Description.objects.exclude(physicist__user_id=request.user.id)
-        physicians=models.Physicist.objects.all().count()-1
+        descriptions=models.Description.objects.select_related("user").filter(user__physicist__isnull=False).exclude(user=user)
+        physicians=models.Physicist.objects.exclude(user=user).count()
         
     else:
-        descriptions=models.Description.objects.select_related("content_type").filter(physicist__user__username=physicist__username)
+        descriptions=models.Description.objects.select_related("user").filter(user__username=physicist__username)
         physicians=1
     desc_serializer=serializers.DescriptionSerializer(descriptions,many=True)
     result=statistics_fn(desc_serializer.data)
@@ -369,9 +372,9 @@ def Statistics_physician(request,physicist__username):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def AIExpertPanel(request,nodule_id):
-    id=request.user.id
+    user=request.user
     #Cogemos todas las descripciones que no pertenezcan a la radióloga, pero que sean de otros radiólogos
-    descriptions_other=models.Description.objects.select_related("content_type").select_related("nodule").filter(nodule_id=nodule_id).filter(content_type_id=9).exclude(physicist__user_id=id)
+    descriptions_other=models.Description.objects.select_related("user").select_related("nodule").filter(nodule_id=nodule_id).filter(user__physicist__isnull=False).exclude(user=user)
     desc_serializer=serializers.DescriptionSerializer(descriptions_other,many=True)
     result=expertPanel_fn(desc_serializer.data)
     return Response(result)

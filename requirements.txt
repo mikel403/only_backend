@@ -63,3 +63,5 @@ tzdata==2023.3
 ultralytics==8.1.9
 urllib3==2.1.0
 zipp==3.17.0
+load_dotenv==0.1.0
+python-dotenv==1.2.1

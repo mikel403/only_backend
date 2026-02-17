@@ -1,5 +1,6 @@
 from email.headerregistry import ContentTypeHeader
 from django.db import models
+from django.db.models import Q
 from django.conf import settings
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelation
@@ -28,11 +29,9 @@ class Nodule(models.Model):
 
 class Description(models.Model):
 
-    content_type=models.ForeignKey(ContentType, on_delete=models.CASCADE)
-    object_id=models.PositiveIntegerField()
-    content_object=GenericForeignKey("content_type","object_id")
     # physicist=models.ForeignKey(Physicist,on_delete=models.CASCADE, related_name="descriptions")
-
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="descriptions")
+    ai = models.ForeignKey("AI", null=True, blank=True, on_delete=models.CASCADE, related_name="descriptions")
     nodule=models.ForeignKey(Nodule,on_delete=models.CASCADE, related_name="descriptions")
     SHAPE_CHOICES=[
         ("oval", "oval"),
@@ -115,8 +114,18 @@ class Description(models.Model):
     time=models.DateTimeField(auto_now_add=True)
 
     class Meta:
+        constraints = [
+            models.CheckConstraint(
+                check=(
+                    (Q(user__isnull=False) & Q(ai__isnull=True)) |
+                    (Q(user__isnull=True) & Q(ai__isnull=False))
+                ),
+                name="description_exactly_one_author",
+            )
+        ]
         indexes = [
-            models.Index(fields=["content_type", "object_id"]),
+            models.Index(fields=["user", "nodule"]),
+            models.Index(fields=["ai", "nodule"]),
         ]
     
 class Physicist(models.Model):
@@ -133,15 +142,13 @@ class Physicist(models.Model):
     def last_name(self) -> str:
         return self.user.last_name
     
-    descriptions = GenericRelation(Description,related_query_name="physicist")
 
 class AI(models.Model):
     name=models.CharField(max_length=255)
-    descriptions = GenericRelation(Description,related_query_name="AI")
 
 class TestUser(models.Model):
     user=models.OneToOneField(settings.AUTH_USER_MODEL,primary_key=True,on_delete=models.CASCADE)
-    descriptions = GenericRelation(Description,related_query_name="TestUser")
     def username(self) -> str:
         return self.user.username
     
+

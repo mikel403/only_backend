@@ -7,7 +7,7 @@ def expertPanel_fn(descriptions):
     physicist_list={}
     for description in descriptions:
         print(description)
-        physicist_id=description["object_id"]
+        physicist_id=description["user_id"]
         id=description["id"]
         if (physicist_id not in physicist_list) or (id>physicist_list[physicist_id]):
             desc_final[physicist_id]=description
@@ -16,7 +16,7 @@ def expertPanel_fn(descriptions):
 
     for physicist_id,desc in desc_final.items():
         for key,carac in desc.items():
-            if key in ["id","content_type_id","object_id","nodule_id"]:
+            if key in ["id","content_type_id","object_id","nodule_id","user_id"]:
                 continue
             if carac:
                 if carac in statistics[key]:
