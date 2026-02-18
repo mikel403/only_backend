@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
-load_dotenv()
+load_dotenv(BASE_DIR / ".env")
 
 
 INSTALLED_APPS = [
@@ -146,6 +146,7 @@ DJOSER= {
     "PASSWORD_RESET_CONFIRM_RETYPE":True,
     "SERIALIZERS":{
         "user_create":"core.serializers.UserCreateSerializer",
+        "user":"core.serializers.UserSerializer",
         "current_user":"core.serializers.UserSerializer",
     }
 }

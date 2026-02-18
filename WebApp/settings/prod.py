@@ -8,7 +8,7 @@ FORCE_SCRIPT_NAME = '/djangoapp'
 # SECURITY WARNING: keep the secret key used in production secret!
 
 
-ALLOWED_HOSTS = os.environ["ALLOWED_HOSTS"]
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "").split(",")
 
 SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 

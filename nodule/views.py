@@ -3,7 +3,6 @@ from django.db.models import Value, BooleanField, Count, Q, Func
 from django.http import Http404
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import OuterRef,Subquery
-from django.shortcuts import get_list_or_404, get_object_or_404
 from django.contrib.auth import get_user_model
 # from django.contrib.contenttypes.prefetch import GenericPrefetch
 
@@ -124,7 +123,7 @@ class PhysicistViewSet(CreateModelMixin, RetrieveModelMixin, ListModelMixin, Upd
 
     @action(detail=False,methods=["GET","PUT"])
     def me(self,request):
-        (physicist,create)=models.Physicist.objects.get_or_create(user_id=request.user.id)
+        physicist=get_object_or_404(models.Physicist,user_id=request.user.id)
         if request.method=="GET":
             serializer=serializers.PhysicistSerializer(physicist)
             return Response(serializer.data)

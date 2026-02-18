@@ -130,7 +130,8 @@ class Description(models.Model):
     
 class Physicist(models.Model):
     user=models.OneToOneField(settings.AUTH_USER_MODEL,primary_key=True,on_delete=models.CASCADE)
-    experience=models.PositiveIntegerField()
+    experience=models.PositiveIntegerField(null=True, blank=True)
+    profession=models.CharField(max_length=255,null=True, blank=True)
     def __str__(self) -> str:
         return f'{self.user.first_name} {self.user.last_name}'
     def email(self) -> str:

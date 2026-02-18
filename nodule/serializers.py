@@ -10,7 +10,7 @@ class PhysicistSerializer(serializers.ModelSerializer):
     
     class Meta:
         model=models.Physicist
-        fields=["user_id","username","experience","first_name","last_name","email"] 
+        fields=["user_id","experience","profession"] 
 
     
     def create(self,validated_data):

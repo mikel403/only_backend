@@ -20,7 +20,6 @@ def ResetPassword(request):
     new_password=request.data["new_password"]
     re_new_password=request.data["re_new_password"]
     user=request.user
-    print(user)
     if new_password != re_new_password:
         return Response({'error': 'Passwords do not match'}, status=status.HTTP_400_BAD_REQUEST)
     
