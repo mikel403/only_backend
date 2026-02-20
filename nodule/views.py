@@ -22,7 +22,7 @@ from nodule.utils.statistics import statistics_fn
 from . import models
 from . import serializers
 
-from .utils.correlation import intercorrelation_fn, intracorrelation_fn
+from .utils.correlation import intercorrelation_Fleiss_fn, intercorrelation_fn, intracorrelation_fn
 from .utils.expert_panel import expertPanel_fn
 from .utils.AIDescriptionFromDatabase import isInDatabase,probs_database
 
@@ -330,6 +330,22 @@ def Intercorrelation(request,physicist__username):
     if len(desc_other_serializer.data) == 0:
         return Response({"error": "Physician not found"}, status=status.HTTP_404_NOT_FOUND)
     result=intercorrelation_fn(desc_serializer.data,desc_other_serializer.data)
+    return Response(result)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def Intercorrelation_Fleiss(request):
+    user=request.user
+    
+    # prefetch=GenericPrefetch("content_object",[models.Physicist.object.all()])
+    descriptions=models.Description.objects.select_related("user").filter(user=user)
+    desc_serializer=serializers.DescriptionSerializer(descriptions,many=True)
+    
+    #For the Fleiss kappa we only consider physicians
+    descriptions_other=models.Description.objects.select_related("user").exclude(user=user).filter(user__physicist__isnull=False)
+    desc_other_serializer=serializers.DescriptionSerializer(descriptions_other,many=True)
+
+    result = intercorrelation_Fleiss_fn(desc_serializer.data, desc_other_serializer.data, user_id=request.user.id)
     return Response(result)
 
 @api_view(["POST"])

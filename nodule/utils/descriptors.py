@@ -47,3 +47,6 @@ idx_to_word_suggestivity = dict((idx, word) for idx, word in enumerate(suggestiv
 
 word_to_idx_birads = dict((word, idx) for idx, word in enumerate(birads))
 idx_to_word_birads = dict((idx, word) for idx, word in enumerate(birads))
+
+word_to_idx_field={"shape":word_to_idx_shape,"margin":word_to_idx_margin,"orientation":word_to_idx_orientation,"echogenicity":word_to_idx_echogenicity,"posterior":word_to_idx_posterior,"calcification":word_to_idx_calcification,"suggestivity":word_to_idx_suggestivity,"birads":word_to_idx_birads}
+idx_to_word_field={"shape":idx_to_word_shape,"margin":idx_to_word_margin,"orientation":idx_to_word_orientation,"echogenicity":idx_to_word_echogenicity,"posterior":idx_to_word_posterior,"calcification":idx_to_word_calcification,"suggestivity":idx_to_word_suggestivity,"birads":idx_to_word_birads}

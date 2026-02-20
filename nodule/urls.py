@@ -22,6 +22,7 @@ urlpatterns = [
     path("<str:AI_name>/descriptions",views.DescriptionAIViewSet),
     path("<str:physicist__username>/intercorrelation",views.Intercorrelation),
     path("intracorrelation",views.Intracorrelation),
+    path("intercorrelation_Fleiss",views.Intercorrelation_Fleiss),
     path("statistics",views.Statistics),
     path("<str:physicist__username>/statistics",views.Statistics_physician),
     path("nodules/<int:nodule_id>/AIDescription",views.AIDescription),

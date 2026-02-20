@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from .descriptors import *
 
 def intercorrelation_fn(desc,desc_other):
@@ -98,6 +100,9 @@ def zero_div(a,b):
         return a/b
 def elememtwise_mul(a,b):
     return [c*d for (c,d) in zip(a,b)] 
+
+def elementwise_sum(list1,list2):
+    return [sum(x) for x in zip(list1, list2)]
 
 def list_div(lis,n):
     return [zero_div(l,n) for l in lis]
@@ -268,3 +273,319 @@ def kappa(y:dict,y_hat:dict,no_birads=False):
     num_descriptor={"shape":num_shape, "margin":num_margin,"orientation": num_orientation, "echogenicity":num_echogenicity, "posterior":num_posterior, "calcification":num_calcification,"special cases":num_suggestivity, "birads":num_birads}
     return {"correlation":correlation,"num_descriptor":num_descriptor}
 
+
+def dedup_latest_by_user_nodule(data, use_time=False):
+    """
+    Devuelve dict {(nodule_id, user_id): row} quedándose con la última fila.
+    """
+    latest = {}
+    for row in data:
+        key = (row["nodule_id"], row["user_id"])
+        prev = latest.get(key)
+
+        if prev is None:
+            latest[key] = row
+        else:
+            if use_time:
+                # requiere row["time"] serializado (ideal: ISO string comparable o datetime)
+                if row["time"] > prev["time"]:
+                    latest[key] = row
+            else:
+                if row["id"] > prev["id"]:
+                    latest[key] = row
+    return latest
+
+
+def build_ratings_by_item(latest_by_pair, field, cat_index):
+    """
+    latest_by_pair: dict {(nodule_id, user_id): row}
+    Devuelve ratings_by_item: dict {nodule_id: [val1, val2, ...]} solo valores válidos
+    """
+    ratings_by_item = defaultdict(list)
+    for (nodule_id, user_id), row in latest_by_pair.items():
+        val = row[field]
+        if val is None:
+            continue
+        if val not in cat_index:
+            continue
+        ratings_by_item[nodule_id].append(val)
+    return dict(ratings_by_item)
+
+def fleiss_kappa_variable_from_ratings(ratings_by_item, categories, only_items=None):
+    """
+    ratings_by_item: {item: [val, val, ...]}
+    only_items: si se pasa, calcula SOLO sobre esos items.
+    Devuelve (kappa, diagnostics, valid_items_used_set)
+    """
+    cat_index = {c: i for i, c in enumerate(categories)}
+    k = len(categories)
+
+    # Filtra items si hace falta
+    items = list(ratings_by_item.keys())
+    if only_items is not None:
+        items = [i for i in items if i in only_items]
+
+    # Ítems válidos: n_i >= 2
+    valid_items = [i for i in items if len(ratings_by_item[i]) >= 2]
+    if not valid_items:
+        return None, {"reason": "No hay ítems con >=2 evaluadores."}, set()
+
+    total_counts = [0] * k
+    total_ratings = 0
+    P_sum = 0.0
+    ni_list = []
+
+    for item in valid_items:
+        vals = ratings_by_item[item]
+        n_i = len(vals)
+        ni_list.append(n_i)
+
+        counts = [0] * k
+        for v in vals:
+            counts[cat_index[v]] += 1
+
+        # acumula marginals
+        for j in range(k):
+            total_counts[j] += counts[j]
+        total_ratings += n_i
+
+        # P_i
+        num = sum(c * (c - 1) for c in counts)
+        P_i = num / (n_i * (n_i - 1))
+        P_sum += P_i
+
+    Pbar = P_sum / len(valid_items)
+    pj = [c / total_ratings for c in total_counts]
+    Pe = sum(p * p for p in pj)
+
+    if Pe == 1.0:
+        return None, {"reason": "Pe=1 (degenerado).", "Pbar": Pbar, "Pe": Pe}, set(valid_items)
+
+    kappa = (Pbar - Pe) / (1.0 - Pe)
+
+    diagnostics = {
+        "n_items_used": len(valid_items),
+        "n_items_with_any_rating": len([i for i in items if len(ratings_by_item[i]) >= 1]),
+        "min_raters": min(ni_list),
+        "max_raters": max(ni_list),
+        "avg_raters": sum(ni_list) / len(ni_list),
+        "Pbar": Pbar,
+        "Pe": Pe,
+        "pj": pj,
+    }
+    return kappa, diagnostics, set(valid_items)
+def delta_fleiss_for_user(
+    data_all,                 # desc + desc_others
+    user_id,                  # radióloga que consulta
+    field,
+    categories,
+    use_time=False
+):
+    """
+    Devuelve:
+    - kappa_all_overlap
+    - kappa_without_overlap
+    - delta
+    - overlap_n (ítems comparables)
+    - lost_without_you (ítems que eran válidos con ella pero pasan a <2 sin ella)
+    - diagnostics de ambos
+    """
+
+    cat_index = {c: i for i, c in enumerate(categories)}
+
+    # Dedup (última instancia)
+    latest_all = dedup_latest_by_user_nodule(data_all, use_time=use_time)
+
+    # Construye data_without (quitando a la radióloga) A NIVEL DE PARES ya deduplicados
+    latest_without = {
+        (nid, uid): row
+        for (nid, uid), row in latest_all.items()
+        if uid != user_id
+    }
+
+    # ratings por item
+    ratings_all = build_ratings_by_item(latest_all, field, cat_index)
+    ratings_wo  = build_ratings_by_item(latest_without, field, cat_index)
+
+    # sets de ítems válidos (>=2) en cada escenario
+    _, _, valid_all = fleiss_kappa_variable_from_ratings(ratings_all, categories)
+    _, _, valid_wo  = fleiss_kappa_variable_from_ratings(ratings_wo,  categories)
+
+    overlap = valid_all & valid_wo
+    lost_without_you = len(valid_all - valid_wo)
+
+    if not overlap:
+        return {
+            "kappa_all": None,
+            "kappa_without": None,
+            "delta": None,
+            "overlap_n": 0,
+            "lost_without_you": lost_without_you,
+            "reason": "No hay ítems válidos comunes (>=2 evaluadores) en ambos escenarios."
+        }
+
+    # Calcula kappa en el MISMO set overlap
+    k_all, diag_all, _ = fleiss_kappa_variable_from_ratings(ratings_all, categories, only_items=overlap)
+    k_wo,  diag_wo,  _ = fleiss_kappa_variable_from_ratings(ratings_wo,  categories, only_items=overlap)
+
+    return {
+        "kappa_all": k_all,
+        "kappa_without": k_wo,
+        "delta": (k_all - k_wo) if (k_all is not None and k_wo is not None) else None,
+        "overlap_n": len(overlap),
+        "lost_without_you": lost_without_you,
+        "diagnostics_all": diag_all,
+        "diagnostics_without": diag_wo,
+    }
+
+
+
+
+
+def intercorrelation_Fleiss_fn(desc, desc_others, user_id):
+    description_total = desc + desc_others
+
+    correlation = {}
+    num_descriptor = {}
+    meta = {}
+
+    for field, categories in descriptors.items():
+        out = delta_fleiss_for_user(
+            data_all=description_total,
+            user_id=user_id,
+            field=field,
+            categories=categories,
+            use_time=False,  # pon True si serializas "time"
+        )
+
+        # delta redondeada para UI
+        correlation[field] = None if out["delta"] is None else round(out["delta"], 2)
+        num_descriptor[field] = out["overlap_n"]  # lo que realmente comparas
+        meta[field] = {
+            "lost_without_you": out["lost_without_you"],
+            "kappa_all": None if out["kappa_all"] is None else round(out["kappa_all"], 2),
+            "kappa_without": None if out["kappa_without"] is None else round(out["kappa_without"], 2),
+        }
+
+    return {"correlation": correlation, "num_descriptor": num_descriptor, "meta": meta}
+
+
+
+
+
+
+
+# def intercorrelation_Fleiss_fn(desc,desc_others):
+#     description_total=desc+desc_others
+#     correlation={}
+#     num_descriptor={}
+#     for field,categories in descriptors.items():
+#         k1,diagnostic1=fleiss_kappa_from_serialized(description_total,field,categories)
+#         print("Todos")
+#         print(diagnostic1)
+#         k2,diagnostic2=fleiss_kappa_from_serialized(desc_others,field,categories)
+#         print("Sin radióloga")
+#         print(diagnostic2)
+#         correlation[field]=round(k1-k2,2)
+#         num_descriptor[field]=diagnostic1["n_items_used"]
+#     return {"correlation":correlation,"num_descriptor":num_descriptor}
+
+
+def fleiss_kappa_from_serialized(data, field, categories, required_raters=None, use_time=False):
+    """
+    data: lista de dicts (serializer.data)
+    field: descriptor ("shape", "margin", etc.)
+    categories: lista de categorías válidas
+    required_raters: opcional (si quieres forzar n fijo)
+    use_time: si True usa 'time' para decidir la última instancia, si no usa 'id'
+    """
+    
+    cat_index = word_to_idx_field[field]
+    k=len(categories)
+
+    # 1) DEDUP: (nodule_id, user_id) -> última fila
+    latest_by_pair = {}
+    for row in data:
+        item = row["nodule_id"]
+        user = row["user_id"]
+
+        if item is None or user is None:
+            continue
+
+        key = (item, user)
+
+        if key not in latest_by_pair:
+            latest_by_pair[key] = row
+        else:
+            # decidir cuál es la "última"
+
+            if row["id"] > latest_by_pair[key]["id"]:
+                latest_by_pair[key] = row
+
+    # 2) Construir ratings por nódulo usando SOLO la última instancia
+    ratings_by_item = defaultdict(list)
+
+    for (item, user), row in latest_by_pair.items():
+        val = row[field]
+
+        if val is None:
+            continue  # usuario dejó el descriptor en blanco
+        if val not in cat_index:
+            continue
+
+        ratings_by_item[item].append(val)
+
+    
+    # 3) Calcular kappa con n_i variable
+    total_counts = [0] * k
+    total_ratings = 0
+    P_sum = 0.0
+    used_items = 0
+    ni_list = []
+
+    for item, vals in ratings_by_item.items():
+        n_i = len(vals)
+        if n_i < 2:
+            continue  # no aporta acuerdo
+        ni_list.append(n_i)
+
+        counts = [0] * k
+        for v in vals:
+            counts[cat_index[v]] += 1
+
+        # acumular para p_j
+        for j in range(k):
+            total_counts[j] += counts[j]
+        total_ratings += n_i
+
+        # P_i
+        num = sum(c * (c - 1) for c in counts)
+        P_i = num / (n_i * (n_i - 1))
+
+        P_sum += P_i
+        used_items += 1
+
+    if used_items == 0:
+        return None, {"reason": "No hay ítems con >=2 evaluadores en este descriptor."}
+
+    Pbar = P_sum / used_items
+    pj = [c / total_ratings for c in total_counts]
+    Pe = sum(p * p for p in pj)
+
+    if Pe == 1.0:
+        return None, {"reason": "Pe = 1 (degenerado).", "Pbar": Pbar, "Pe": Pe}
+
+    kappa = (Pbar - Pe) / (1.0 - Pe)
+
+    diagnostics = {
+        "n_items_used": used_items,
+        "n_items_with_any_rating": len(ratings_by_item),
+        "min_raters": min(ni_list) if ni_list else None,
+        "max_raters": max(ni_list) if ni_list else None,
+        "avg_raters": (sum(ni_list) / len(ni_list)) if ni_list else None,
+        "Pbar": Pbar,
+        "Pe": Pe,
+        "pj": pj,
+        "after_dedup_pairs": len(latest_by_pair),
+    }
+    return round(kappa,2), diagnostics
