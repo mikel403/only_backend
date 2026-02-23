@@ -48,7 +48,6 @@ class Description(models.Model):
     ]
     ORIENTATION_CHOICES=[
         ("parallel", "parallel"),
-        ("no orientation","no orientation"),
         ("not parallel","not parallel"),
     ]
     ECHOGENICITY_CHOICES=[
