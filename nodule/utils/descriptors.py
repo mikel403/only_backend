@@ -2,7 +2,7 @@
 
 shape=["irregular","oval","round"]
 margin=["angulated","circumscribed","spiculated","indistinct","microlobulated"]
-orientation=["parallel","no orientation","not parallel"]
+orientation=["parallel","not parallel"]
 echogenicity=["anechoic","heterogeneous","hypoechoic","isoechoic","hyperechoic","complex cystic and solid"]
 posterior=["enhancement","no features","shadowing", "combined pattern"]
 # halo=["no halo","halo"]
