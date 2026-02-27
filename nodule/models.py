@@ -18,6 +18,7 @@ from django.contrib.contenttypes.fields import GenericForeignKey, GenericRelatio
 
 class Nodule(models.Model):
     name=models.CharField(max_length=255,default="nodulo prueba")
+    #These will be private
     image=models.ImageField(
         upload_to="nodule/images",
         null=True)
@@ -25,6 +26,7 @@ class Nodule(models.Model):
         upload_to="full_nodule/images",
         null=True)
     new=models.CharField(max_length=255,null=True)
+    #These are the images corresponding to the public database and are therefore public
 
 
 class Description(models.Model):

@@ -8,7 +8,10 @@ ALLOWED_HOSTS = ["127.0.0.1","localhost"]
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "default_secret_key")
 
-
+PUBLIC_MEDIA_BASE_URL = os.environ.get(
+    "PUBLIC_MEDIA_BASE_URL",
+    "http://localhost:8000"
+)
 
 DATABASES = {
     "default": {

@@ -29,6 +29,8 @@ urlpatterns = [
     path("auth/", include("djoser.urls")),
     path("auth/", include('djoser.urls.jwt'),name="create-jwt"),
 ] 
-
 if settings.DEBUG:
-    urlpatterns+=static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += static(
+        settings.PUBLIC_MEDIA_URL,
+        document_root=settings.PUBLIC_MEDIA_ROOT
+    )

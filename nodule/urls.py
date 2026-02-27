@@ -28,6 +28,8 @@ urlpatterns = [
     path("nodules/<int:nodule_id>/AIDescription",views.AIDescription),
     path("nodules/<int:nodule_id>/expert-panel",views.AIExpertPanel),
     path("nodules/<int:nodule_id>/<str:physicist__username>/physician_ground_truth",views.physician_ground_truth),
+    path("nodules/<int:pk>/image/", views.private_nodule_image, {"which": "image"}, name="nodule-image"),
+    path("nodules/<int:pk>/full-image/", views.private_nodule_image, {"which": "full"}, name="nodule-full-image"),
     path("AIDetection",views.AIDetection),
     
     # path("", views.NoduleList.as_view()),

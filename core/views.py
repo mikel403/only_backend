@@ -27,4 +27,3 @@ def ResetPassword(request):
     user.set_password(new_password)
     user.save()
     return Response({'detail': 'The password has been set correctly'}, status=status.HTTP_200_OK)
-

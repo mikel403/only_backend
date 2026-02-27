@@ -22,7 +22,10 @@ DATABASES = {
         "PASSWORD": os.environ["DB_PASSWORD"],
     }
 }
-
+PUBLIC_MEDIA_BASE_URL = os.environ.get(
+    "PUBLIC_MEDIA_BASE_URL",
+    "https://www.cisiad.uned.es/djangoapp/"
+)
 
 CSRF_TRUSTED_ORIGINS = [
     'https://www.cisiad.uned.es',  # add your domain here

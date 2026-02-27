@@ -1,6 +1,6 @@
 from django.shortcuts import get_object_or_404
 from django.db.models import Value, BooleanField, Count, Q, Func
-from django.http import Http404
+from django.http import FileResponse, Http404
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import OuterRef,Subquery
 from django.contrib.auth import get_user_model
@@ -14,7 +14,7 @@ from rest_framework import status
 from rest_framework.mixins import ListModelMixin, CreateModelMixin, RetrieveModelMixin, UpdateModelMixin
 from rest_framework.generics import ListAPIView
 from rest_framework.viewsets import ModelViewSet, GenericViewSet
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, PermissionDenied
 from nodule.utils.YOLO import convertImageCV, yoloCrop
 from nodule.utils.descriptionModel import results_simple
 
@@ -412,6 +412,20 @@ def physician_ground_truth(request,nodule_id,physicist__username):
     desc_serializer=serializers.DescriptionSerializer(descriptions,many=True)
     result=expertPanel_fn(desc_serializer.data)
     return Response(result)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def private_nodule_image(request, pk, which="image"):
+    nodule = models.Nodule.objects.get(pk=pk)
+    f = nodule.image if which == "image" else nodule.full_image
+    if not f:
+        raise Http404
+    is_owner = (nodule.new == request.user.username)
+    is_public_dataset = (nodule.new is None)
+    if not (is_public_dataset or is_owner or request.user.is_staff):
+        raise PermissionDenied("You are not authorized to access this image.")
+
+    return FileResponse(f.open("rb"))
 # def NodulePhysicistViewSet(request):
 #     notDescribed=models.Nodule.objects.prefetch_related("descriptions").exclude(descriptions__physicist_id=self.request.user.id).annotate(isdescribed=Value(False))
 #     described=models.Nodule.objects.prefetch_related("descriptions").filter(descriptions__physicist_id=self.request.user.id).annotate(isdescribed=Value(True))
