@@ -403,14 +403,13 @@ def physician_ground_truth(request,nodule_id,physicist__username):
     if not physician:
         raise NotFound(detail="physician_not_found")
     #Cogemos las descripciones del usuario
-    description = get_object_or_404(
-    models.Description.objects.select_related("user", "nodule"),
-    nodule_id=nodule_id,
-    user=physician,
+    descriptions = models.Description.objects.select_related("user", "nodule").filter(
+        nodule_id=nodule_id,
+        user=physician,
     )
-    if not description:
+    if not descriptions.exists():
         raise NotFound(detail="description_not_found")
-    desc_serializer=serializers.DescriptionSerializer(description,many=True)
+    desc_serializer=serializers.DescriptionSerializer(descriptions,many=True)
     result=expertPanel_fn(desc_serializer.data)
     return Response(result)
 # def NodulePhysicistViewSet(request):
