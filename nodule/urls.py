@@ -27,6 +27,7 @@ urlpatterns = [
     path("<str:physicist__username>/statistics",views.Statistics_physician),
     path("nodules/<int:nodule_id>/AIDescription",views.AIDescription),
     path("nodules/<int:nodule_id>/expert-panel",views.AIExpertPanel),
+    path("nodules/<int:nodule_id>/<str:physicist__username>/physician_ground_truth",views.physician_ground_truth),
     path("AIDetection",views.AIDetection),
     
     # path("", views.NoduleList.as_view()),

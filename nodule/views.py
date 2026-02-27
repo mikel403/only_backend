@@ -303,16 +303,16 @@ def AIDescription(request, nodule_id):
         # Process the image (results_simple is a custom function assumed to exist)
         _, words,probs = results_simple(image_path)
         # Construct the response
-        result = {
-            "shape": words[0],
-            "margin": words[1],
-            "orientation": words[2],
-            "echogenicity": words[3],
-            "posterior": words[4],
-            "calcification": None,
-            "suggestivity": words[5],
-            "birads": words[6],
-        }
+        # result = {
+        #     "shape": words[0],
+        #     "margin": words[1],
+        #     "orientation": words[2],
+        #     "echogenicity": words[3],
+        #     "posterior": words[4],
+        #     "calcification": None,
+        #     "suggestivity": words[5],
+        #     "birads": words[6],
+        # }
 
     return Response(probs)
 
@@ -390,6 +390,16 @@ def AIExpertPanel(request,nodule_id):
     user=request.user
     #Cogemos todas las descripciones que no pertenezcan a la radióloga, pero que sean de otros radiólogos
     descriptions_other=models.Description.objects.select_related("user").select_related("nodule").filter(nodule_id=nodule_id).filter(user__physicist__isnull=False).exclude(user=user)
+    desc_serializer=serializers.DescriptionSerializer(descriptions_other,many=True)
+    result=expertPanel_fn(desc_serializer.data)
+    return Response(result)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def physician_ground_truth(request,nodule_id,physicist__username):
+    user=request.user
+    #Cogemos las descripciones del usuario
+    descriptions_other=models.Description.objects.select_related("user").select_related("nodule").filter(nodule_id=nodule_id).filter(user__username=physicist__username)
     desc_serializer=serializers.DescriptionSerializer(descriptions_other,many=True)
     result=expertPanel_fn(desc_serializer.data)
     return Response(result)
