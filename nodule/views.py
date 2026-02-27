@@ -14,6 +14,7 @@ from rest_framework import status
 from rest_framework.mixins import ListModelMixin, CreateModelMixin, RetrieveModelMixin, UpdateModelMixin
 from rest_framework.generics import ListAPIView
 from rest_framework.viewsets import ModelViewSet, GenericViewSet
+from rest_framework.exceptions import NotFound
 from nodule.utils.YOLO import convertImageCV, yoloCrop
 from nodule.utils.descriptionModel import results_simple
 
@@ -398,9 +399,18 @@ def AIExpertPanel(request,nodule_id):
 @permission_classes([IsAuthenticated])
 def physician_ground_truth(request,nodule_id,physicist__username):
     user=request.user
+    physician = User.objects.filter(username=physicist__username).first()
+    if not physician:
+        raise NotFound(detail="physician_not_found")
     #Cogemos las descripciones del usuario
-    descriptions_other=models.Description.objects.select_related("user").select_related("nodule").filter(nodule_id=nodule_id).filter(user__username=physicist__username)
-    desc_serializer=serializers.DescriptionSerializer(descriptions_other,many=True)
+    description = get_object_or_404(
+    models.Description.objects.select_related("user", "nodule"),
+    nodule_id=nodule_id,
+    user=physician,
+    )
+    if not description:
+        raise NotFound(detail="description_not_found")
+    desc_serializer=serializers.DescriptionSerializer(description,many=True)
     result=expertPanel_fn(desc_serializer.data)
     return Response(result)
 # def NodulePhysicistViewSet(request):
