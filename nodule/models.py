@@ -26,6 +26,8 @@ class Nodule(models.Model):
         upload_to="full_nodule/images",
         null=True)
     new=models.CharField(max_length=255,null=True)
+    public=models.BooleanField(default=False)
+    research=models.BooleanField(default=False)
     #These are the images corresponding to the public database and are therefore public
 
 

@@ -44,22 +44,21 @@ import random
 #         serializer.save()
 #         return Response(serializer.data, status=status.HTTP_201_CREATED)
 User = get_user_model()
-def get_content_type(user_id):
-    content_type_model = None
-    if models.Physicist.objects.filter(user_id=user_id).exists():
-        content_type_model = models.Physicist
-    elif models.AI.objects.filter(id=user_id).exists():
-        content_type_model = models.AI
-    elif models.TestUser.objects.filter(user_id=user_id).exists():
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_profile_type(user_id):
+    User = get_user_model()
 
-        content_type_model = models.TestUser
-    
+    if models.Physicist.objects.filter(user_id=user_id).exists():
+        return "physicist"
+    elif models.AI.objects.filter(id=user_id).exists():
+        return "ai"
+    elif models.TestUser.objects.filter(user_id=user_id).exists():
+        return "test_user"
     elif User.objects.filter(id=user_id).exists():
-        content_type_model = User
+        return "user"
     else:
         raise ValueError("El tipo de usuario no es válido.")
-    content_type_id = ContentType.objects.get_for_model(content_type_model).id
-    return content_type_id
 
     
 @permission_classes([IsAuthenticated])    
@@ -156,8 +155,6 @@ class NodulePhysicistViewSet(ListModelMixin,CreateModelMixin,GenericViewSet):
         timesDescribed=self.request.GET.get("_timesDescribed")
         yourData=self.request.GET.get("_yourData")
 
-        user_id=self.request.user.id
-        content_type_id=get_content_type(user_id)
         described=models.Nodule.objects.prefetch_related("descriptions").filter(descriptions__user=self.request.user)
         
 
