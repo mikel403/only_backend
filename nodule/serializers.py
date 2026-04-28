@@ -29,7 +29,7 @@ class NodulePhysicistSerializer(serializers.ModelSerializer):
     public_full_image_url = serializers.SerializerMethodField()
     class Meta:
          model=models.Nodule
-         fields=["id","name", "image","full_image","new","numDescriptions","numNodules","numNodules2Times","numNodulesDescribed","public_image_url","public_full_image_url","private_image_url","private_full_image_url"]
+         fields=["id","name", "public", "research", "declaration", "image","full_image","new","numDescriptions","numNodules","numNodules2Times","numNodulesDescribed","public_image_url","public_full_image_url","private_image_url","private_full_image_url"]
     def create(self,validated_data):
         new=self.context["new"]
         return models.Nodule.objects.create(new=new, **validated_data)

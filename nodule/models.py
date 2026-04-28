@@ -26,9 +26,12 @@ class Nodule(models.Model):
         upload_to="full_nodule/images",
         null=True)
     new=models.CharField(max_length=255,null=True)
+    #if uploaded the images will be made public or used for research purposes
     public=models.BooleanField(default=False)
     research=models.BooleanField(default=False)
-    #These are the images corresponding to the public database and are therefore public
+    #If an image will be made public or used for research, a declaration that they have the information to delete the images if asked by the patient
+    declaration=models.BooleanField(default=False)
+    
 
 
 class Description(models.Model):
