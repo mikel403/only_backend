@@ -30,6 +30,16 @@ class NodulePhysicistSerializer(serializers.ModelSerializer):
     class Meta:
          model=models.Nodule
          fields=["id","name", "public", "research", "declaration", "image","full_image","new","numDescriptions","numNodules","numNodules2Times","numNodulesDescribed","public_image_url","public_full_image_url","private_image_url","private_full_image_url"]
+    def validate(self, attrs):
+        #Sharing the image requires a radiologist who accepts the declaration; otherwise the declaration is not stored
+        if attrs.get("public", False) or attrs.get("research", False):
+            if not hasattr(self.context.get("user"), "physicist"):
+                raise serializers.ValidationError({"declaration": "Only radiologists can make images public or allow their use for research"})
+            if not attrs.get("declaration", False):
+                raise serializers.ValidationError({"declaration": "You must accept the declaration to make images public or allow their use for research"})
+        else:
+            attrs["declaration"] = False
+        return attrs
     def create(self,validated_data):
         new=self.context["new"]
         return models.Nodule.objects.create(new=new, **validated_data)

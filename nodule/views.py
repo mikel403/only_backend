@@ -167,7 +167,7 @@ class NodulePhysicistViewSet(ListModelMixin,CreateModelMixin,GenericViewSet):
     random.seed(seed)   
     serializer_class=serializers.NodulePhysicistSerializer
     def get_serializer_context(self):
-        return {"new":self.request.user.username}
+        return {"new":self.request.user.username,"user":self.request.user}
     def get_queryset(self):
         user = self.request.user
         limit=self.request.GET.get("_limit")
