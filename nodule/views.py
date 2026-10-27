@@ -1,5 +1,5 @@
 from django.shortcuts import get_object_or_404
-from django.db.models import Value, BooleanField, Count, Q, Func
+from django.db.models import Value, BooleanField, Count, Q, Func, IntegerField
 from django.http import FileResponse, Http404
 from django.contrib.contenttypes.models import ContentType
 from django.db.models import OuterRef,Subquery
@@ -199,7 +199,7 @@ class NodulePhysicistViewSet(ListModelMixin,CreateModelMixin,GenericViewSet):
         numNodulesDescribed=Value(described.count())
         if timesDescribed and (timesDescribed!="0" and timesDescribed!="all"):
             numNodules=Value(0)
-            described=paginate(described, self.request)
+            described=paginate(described.order_by("id"), self.request)
             return described.annotate(numNodules=numNodules,numNodules2Times=numNodules2Times,numNodulesDescribed=numNodulesDescribed)
             
         
@@ -221,13 +221,14 @@ class NodulePhysicistViewSet(ListModelMixin,CreateModelMixin,GenericViewSet):
         if timesDescribed and timesDescribed=="0":
             numNodules2Times=Value(0)
             numNodulesDescribed=Value(0)
-            notDescribed=paginate(notDescribed, self.request)
+            notDescribed=paginate(notDescribed.order_by("id"), self.request)
             return notDescribed.annotate(numNodules=numNodules,numNodules2Times=numNodules2Times,numNodulesDescribed=numNodulesDescribed)
         
         
-        described=described.annotate(numNodules=numNodules,numNodules2Times=numNodules2Times,numNodulesDescribed=numNodulesDescribed)
-        notDescribed=notDescribed.annotate(numNodules=numNodules,numNodules2Times=numNodules2Times,numNodulesDescribed=numNodulesDescribed)
-        combination = notDescribed.union(described)
+        #Pending nodules first, then described ones; id gives a deterministic order for pagination
+        described=described.annotate(numNodules=numNodules,numNodules2Times=numNodules2Times,numNodulesDescribed=numNodulesDescribed,orderPriority=Value(1, output_field=IntegerField()))
+        notDescribed=notDescribed.annotate(numNodules=numNodules,numNodules2Times=numNodules2Times,numNodulesDescribed=numNodulesDescribed,orderPriority=Value(0, output_field=IntegerField()))
+        combination = notDescribed.union(described).order_by("orderPriority","id")
         combination=paginate(combination, self.request)
 
         # def list(self,request,*args,**kwargs):

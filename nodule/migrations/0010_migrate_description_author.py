@@ -5,6 +5,11 @@ def forwards(apps, schema_editor):
     Description = apps.get_model("nodule", "Description")
     ContentType = apps.get_model("contenttypes", "ContentType")
 
+    # En una base de datos vacía (tests, instalación nueva) no hay descripciones que migrar
+    # y los ContentTypes aún no existen: se crean en post_migrate, después de todas las migraciones
+    if not Description.objects.exists():
+        return
+
     # ContentTypes del modelo (ojo: model en minúsculas)
     ct_physicist = ContentType.objects.get(app_label="nodule", model="physicist")
     ct_testuser = ContentType.objects.get(app_label="nodule", model="testuser")
