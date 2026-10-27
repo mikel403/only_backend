@@ -9,7 +9,7 @@ from rest_framework.decorators import api_view, permission_classes
 from . import serializers
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from nodule.models import TestUser
+from .permissions import is_test_user
 
 # Create your views here.
 # class UserView(CreateModelMixin,RetrieveModelMixin,GenericViewSet):
@@ -24,7 +24,7 @@ def ResetPassword(request):
     re_new_password=request.data.get("re_new_password")
     user=request.user
     #The test user is shared, so its password can not be changed
-    if user.username=="TestUser" or TestUser.objects.filter(user=user).exists():
+    if is_test_user(user):
         return Response({'error': 'As a test user you can not change the password', 'codes': ['test_user']}, status=status.HTTP_403_FORBIDDEN)
     if not current_password or not new_password or not re_new_password:
         return Response({'error': 'All fields are required', 'codes': ['required']}, status=status.HTTP_400_BAD_REQUEST)

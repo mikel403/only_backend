@@ -386,7 +386,7 @@ def delta_fleiss_for_user(
     - kappa_all_overlap
     - kappa_without_overlap
     - delta
-    - overlap_n (ítems comparables)
+    - overlap_n (ítems evaluados por la radióloga que tienen >=2 evaluadores más)
     - lost_without_you (ítems que eran válidos con ella pero pasan a <2 sin ella)
     - diagnostics de ambos
     """
@@ -411,7 +411,14 @@ def delta_fleiss_for_user(
     _, _, valid_all = fleiss_kappa_variable_from_ratings(ratings_all, categories)
     _, _, valid_wo  = fleiss_kappa_variable_from_ratings(ratings_wo,  categories)
 
-    overlap = valid_all & valid_wo
+    # Ítems que la radióloga ha evaluado en este descriptor. El Δ se mide solo sobre ellos:
+    # los ítems que no ha evaluado son iguales en ambos escenarios y solo diluirían el Δ
+    rated_by_user = {
+        nid for (nid, uid), row in latest_all.items()
+        if uid == user_id and row[field] in cat_index
+    }
+    # Con >=2 evaluadores sin ella, el ítem también es válido con ella (>=3)
+    overlap = rated_by_user & valid_wo
     lost_without_you = len(valid_all - valid_wo)
 
     if not overlap:

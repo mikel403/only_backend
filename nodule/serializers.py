@@ -1,7 +1,9 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from django.contrib.contenttypes.models import ContentType
 from . import models
+from .validators import validate_image_size
 
 
     
@@ -30,6 +32,12 @@ class NodulePhysicistSerializer(serializers.ModelSerializer):
     class Meta:
          model=models.Nodule
          fields=["id","name", "public", "research", "declaration", "image","full_image","new","numDescriptions","numNodules","numNodules2Times","numNodulesDescribed","public_image_url","public_full_image_url","private_image_url","private_full_image_url"]
+    def validate_image(self, value):
+        try:
+            validate_image_size(value)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(e.messages)
+        return value
     def validate(self, attrs):
         #Sharing the image requires a radiologist who accepts the declaration; otherwise the declaration is not stored
         if attrs.get("public", False) or attrs.get("research", False):

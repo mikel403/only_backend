@@ -86,7 +86,10 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
-    
+    #YOLO detection runs synchronously, so each user can only request a few per minute
+    'DEFAULT_THROTTLE_RATES': {
+        'ai_detection': '10/min',
+    },
 }
 
 SIMPLE_JWT = {
@@ -137,6 +140,9 @@ MEDIA_ROOT= os.path.join(BASE_DIR, "media")
 
 
 PUBLIC_MEDIA_URL = "/public-media/"
+
+#Maximum size of uploaded images (nodules and AI detection); keep it in sync with frontend/src/libs/url.ts
+MAX_UPLOAD_IMAGE_SIZE_MB = 10
 PUBLIC_MEDIA_ROOT = BASE_DIR / "public-media" 
 
 # Default primary key field type
@@ -156,6 +162,10 @@ DJOSER= {
     #The username identifies the owner of the uploaded nodules, so users can not change it
     "PERMISSIONS":{
         "set_username":["rest_framework.permissions.IsAdminUser"],
+        #The shared test user can read its profile but not change it or delete it
+        "user":["djoser.permissions.CurrentUserOrAdmin","core.permissions.ReadOnlyForTestUser"],
+        "user_delete":["djoser.permissions.CurrentUserOrAdmin","core.permissions.ReadOnlyForTestUser"],
+        "set_password":["djoser.permissions.CurrentUserOrAdmin","core.permissions.ReadOnlyForTestUser"],
     },
 }
 
