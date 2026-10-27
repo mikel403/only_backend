@@ -9,6 +9,9 @@ model = YOLO(model_path)
 
 def convertImageCV(image):
     image_array = cv2.imdecode(np.frombuffer(image.read(), np.uint8), cv2.IMREAD_COLOR)
+    #imdecode returns None when the file is not a valid image
+    if image_array is None:
+        return None
     gray_image = cv2.cvtColor(image_array, cv2.COLOR_BGR2GRAY)
     return image_array
 def yoloCrop(image):
