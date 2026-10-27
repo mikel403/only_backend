@@ -6,7 +6,8 @@ from django.db.models import OuterRef,Subquery
 from django.contrib.auth import get_user_model
 # from django.contrib.contenttypes.prefetch import GenericPrefetch
 
-from rest_framework.decorators import api_view, action,permission_classes
+from rest_framework.decorators import api_view, action,permission_classes, throttle_classes
+from rest_framework.throttling import UserRateThrottle
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework import status
@@ -15,7 +16,10 @@ from rest_framework.mixins import ListModelMixin, CreateModelMixin, RetrieveMode
 from rest_framework.generics import ListAPIView
 from rest_framework.viewsets import ModelViewSet, GenericViewSet
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from core.permissions import ReadOnlyForTestUser
 from nodule.utils.YOLO import convertImageCV, yoloCrop
+from django.core.exceptions import ValidationError as DjangoValidationError
+from .validators import validate_image_size
 from nodule.utils.descriptionModel import results_simple
 
 from nodule.utils.statistics import statistics_fn
@@ -44,6 +48,10 @@ import random
 #         serializer.save()
 #         return Response(serializer.data, status=status.HTTP_201_CREATED)
 User = get_user_model()
+
+#Nodules a user can see: the public dataset and the ones they uploaded
+def visible_nodules(user):
+    return models.Nodule.objects.filter(Q(new=user.username) | Q(new__isnull=True))
 
 #Applies the _start/_limit pagination used by the frontend
 def paginate(queryset, request):
@@ -76,16 +84,18 @@ def get_profile_type(user_id):
         raise ValueError("El tipo de usuario no es válido.")
 
     
-@permission_classes([IsAuthenticated])    
+@permission_classes([IsAuthenticated, ReadOnlyForTestUser])
 class DescriptionViewSet(ListModelMixin, CreateModelMixin,GenericViewSet):
     serializer_class=serializers.DescriptionSerializer
+    #Only nodules listed for the user (public dataset or uploaded by them) can be described; 404 hides foreign private nodules
+    def get_nodule(self):
+        nodule_pk=self.kwargs["nodule_pk"]
+        if not str(nodule_pk).isdigit():
+            raise Http404()
+        return get_object_or_404(visible_nodules(self.request.user), pk=nodule_pk)
     def get_serializer_context(self):
-        nodule_id = self.kwargs["nodule_pk"]
-
-        # Obtener el user_id del usuario autenticado
-        
         context = super().get_serializer_context()
-        context["nodule_id"] = self.kwargs["nodule_pk"]
+        context["nodule_id"] = self.get_nodule().id
         return context
     
     def get_queryset(self):
@@ -97,6 +107,8 @@ class DescriptionViewSet(ListModelMixin, CreateModelMixin,GenericViewSet):
 @permission_classes([IsAuthenticated])
 def Description_detail(request,nodule_id,physicist__username):
     # description=get_object_or_404(models.Description.objects, nodule_id=nodule_id, physicist__user__first_name=physicist__first_name,)
+    if not visible_nodules(request.user).filter(id=nodule_id).exists():
+        raise Http404()
     description=models.Description.objects.filter(nodule_id=nodule_id,user__username=physicist__username,user__physicist__isnull=False).select_related("user").last()
     if description:
         serializer=serializers.DescriptionSerializer(description,many=False)
@@ -125,11 +137,11 @@ class DescriptionmeViewSet(ListModelMixin,GenericViewSet):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def DescriptionAIViewSet(request,AI_name):
-    description=models.Description.objects.filter(ai__name=AI_name)
+    description=models.Description.objects.filter(ai__name=AI_name,nodule__in=visible_nodules(request.user))
     serializer=serializers.DescriptionSerializer(description,many=True)
     return Response(serializer.data)
         
-@permission_classes([IsAuthenticated])    
+@permission_classes([IsAuthenticated, ReadOnlyForTestUser])
 class PhysicistViewSet(CreateModelMixin, RetrieveModelMixin, ListModelMixin, UpdateModelMixin, GenericViewSet):
     queryset=models.Physicist.objects.all()
     serializer_class=serializers.PhysicistSerializer
@@ -161,7 +173,7 @@ class PhysicistViewSet(CreateModelMixin, RetrieveModelMixin, ListModelMixin, Upd
 #     def get_serializer_context(self):
 #         return {"request":self.request}
 
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, ReadOnlyForTestUser])
 class NodulePhysicistViewSet(ListModelMixin,CreateModelMixin,GenericViewSet):
     seed = 42
     random.seed(seed)   
@@ -281,11 +293,19 @@ class NoduleDescriptionViewSet(ListModelMixin,GenericViewSet):
 
 
 
+class AIDetectionThrottle(UserRateThrottle):
+    scope="ai_detection"
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AIDetectionThrottle])
 def AIDetection(request):
     if "image" not in request.FILES:
         return Response({"error": "No image provided"}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        validate_image_size(request.FILES["image"])
+    except DjangoValidationError as e:
+        return Response({"error": e.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
     image=convertImageCV(request.FILES["image"])
     if image is None:
         return Response({"error": "Invalid image"}, status=status.HTTP_400_BAD_REQUEST)
@@ -296,7 +316,7 @@ def AIDetection(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def AIDescription(request, nodule_id):
-    nodule = get_object_or_404(models.Nodule, id=nodule_id)
+    nodule = get_object_or_404(visible_nodules(request.user), id=nodule_id)
     # Get the actual file path of the image
     if isInDatabase(nodule.name):
         probs=probs_database(nodule.name)
@@ -330,9 +350,11 @@ def Intercorrelation(request,physicist__username):
     user=request.user
     
     # prefetch=GenericPrefetch("content_object",[models.Physicist.object.all()])
-    descriptions=models.Description.objects.select_related("user").filter(user=user)
+    #Any user can be compared, but only on nodules the requesting user can see
+    visible=models.Description.objects.select_related("user").filter(nodule__in=visible_nodules(user))
+    descriptions=visible.filter(user=user)
     desc_serializer=serializers.DescriptionSerializer(descriptions,many=True)
-    descriptions_other=models.Description.objects.select_related("user").filter(user__username=physicist__username)
+    descriptions_other=visible.filter(user__username=physicist__username)
     desc_other_serializer=serializers.DescriptionSerializer(descriptions_other,many=True)
     if len(desc_other_serializer.data) == 0:
         return Response({"error": "Physician not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -379,12 +401,18 @@ def Statistics(request):
 @permission_classes([IsAuthenticated])
 def Statistics_physician(request,physicist__username):
     user=request.user
+    #Only descriptions of nodules the requesting user can see are counted
+    visible=models.Description.objects.select_related("user").filter(nodule__in=visible_nodules(user))
+    #"Overall" is a reserved username (see core.serializers), so it can not hide a real user
     if physicist__username=="Overall":
-        descriptions=models.Description.objects.select_related("user").filter(user__physicist__isnull=False).exclude(user=user)
+        descriptions=visible.filter(user__physicist__isnull=False).exclude(user=user)
         physicians=models.Physicist.objects.exclude(user=user).count()
         
     else:
-        descriptions=models.Description.objects.select_related("user").filter(user__username=physicist__username)
+        #Statistics can only be compared with radiologists
+        if not models.Physicist.objects.filter(user__username=physicist__username).exists():
+            return Response({"error": "Physician not found"}, status=status.HTTP_404_NOT_FOUND)
+        descriptions=visible.filter(user__username=physicist__username)
         physicians=1
     desc_serializer=serializers.DescriptionSerializer(descriptions,many=True)
     result=statistics_fn(desc_serializer.data)
@@ -395,6 +423,7 @@ def Statistics_physician(request,physicist__username):
 @permission_classes([IsAuthenticated])
 def AIExpertPanel(request,nodule_id):
     user=request.user
+    get_object_or_404(visible_nodules(user), id=nodule_id)
     #Cogemos todas las descripciones que no pertenezcan a la radióloga, pero que sean de otros radiólogos
     descriptions_other=models.Description.objects.select_related("user").select_related("nodule").filter(nodule_id=nodule_id).filter(user__physicist__isnull=False).exclude(user=user)
     desc_serializer=serializers.DescriptionSerializer(descriptions_other,many=True)
@@ -405,6 +434,7 @@ def AIExpertPanel(request,nodule_id):
 @permission_classes([IsAuthenticated])
 def physician_ground_truth(request,nodule_id,physicist__username):
     user=request.user
+    get_object_or_404(visible_nodules(user), id=nodule_id)
     physician = User.objects.filter(username=physicist__username).first()
     if not physician:
         raise NotFound(detail="physician_not_found")
