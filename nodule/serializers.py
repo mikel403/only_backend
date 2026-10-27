@@ -43,8 +43,6 @@ class NodulePhysicistSerializer(serializers.ModelSerializer):
     def create(self,validated_data):
         new=self.context["new"]
         return models.Nodule.objects.create(new=new, **validated_data)
-    def _abs(self, request, url: str) -> str:
-        return request.build_absolute_uri(url) if request else url
     def get_public_image_url(self, obj):
         # Solo dataset público
         if obj.new is not None or not obj.image:
@@ -58,13 +56,12 @@ class NodulePhysicistSerializer(serializers.ModelSerializer):
         base = settings.PUBLIC_MEDIA_BASE_URL.rstrip("/")
         return f"{base}{settings.PUBLIC_MEDIA_URL}{obj.full_image}"
 
+    #Relative to the API base url: absolute urls lose FORCE_SCRIPT_NAME (/djangoapp) behind the proxy
     def get_private_image_url(self, obj):
-        request = self.context.get("request")
-        return self._abs(request, f"/api/nodules/{obj.pk}/image/")
+        return f"/api/nodules/{obj.pk}/image/"
 
     def get_private_full_image_url(self, obj):
-        request = self.context.get("request")
-        return self._abs(request, f"/api/nodules/{obj.pk}/full-image/")
+        return f"/api/nodules/{obj.pk}/full-image/"
 
 class DescriptionSerializer(serializers.ModelSerializer):
     # physicist=PhysicistSerializer(read_only=True)
@@ -103,8 +100,6 @@ class NoduleDescriptionsSerializer(serializers.ModelSerializer):
     class Meta:
         model=models.Nodule
         fields=["id","name", "image","new","descriptions","numDescriptions","numNodules2Times","numNodulesDescribed","public_image_url","public_full_image_url","private_image_url","private_full_image_url"]
-    def _abs(self, request, url: str) -> str:
-        return request.build_absolute_uri(url) if request else url
     def get_descriptions(self, instance: models.Nodule):
         request = self.context["request"]
         user = request.user
@@ -127,10 +122,9 @@ class NoduleDescriptionsSerializer(serializers.ModelSerializer):
         base = settings.PUBLIC_MEDIA_BASE_URL.rstrip("/")
         return f"{base}{settings.PUBLIC_MEDIA_URL}{obj.full_image}"
 
+    #Relative to the API base url: absolute urls lose FORCE_SCRIPT_NAME (/djangoapp) behind the proxy
     def get_private_image_url(self, obj):
-        request = self.context.get("request")
-        return self._abs(request, f"/api/nodules/{obj.pk}/image/")
+        return f"/api/nodules/{obj.pk}/image/"
 
     def get_private_full_image_url(self, obj):
-        request = self.context.get("request")
-        return self._abs(request, f"/api/nodules/{obj.pk}/full-image/")
+        return f"/api/nodules/{obj.pk}/full-image/"
