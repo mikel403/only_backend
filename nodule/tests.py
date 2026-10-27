@@ -1,4 +1,11 @@
+import io
+import shutil
+import tempfile
+
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
+from PIL import Image
 from rest_framework.test import APITestCase
 
 from . import models
@@ -70,3 +77,55 @@ class NodulePhysicistPaginationTests(APITestCase):
         self.assertEqual(first["numNodulesDescribed"], 3)
         self.assertEqual(first["numNodules2Times"], 1)
         self.assertNotIn("orderPriority", first)
+
+
+#Uploaded files go to a temporary folder instead of the real media folder
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class NoduleUploadConsentTests(APITestCase):
+    url = "/api/nodules/"
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.radiologist = User.objects.create_user(username="radiologist", password="x")
+        models.Physicist.objects.create(user=cls.radiologist)
+        cls.user = User.objects.create_user(username="student", password="x")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(models.Nodule._meta.get_field("image").storage.location, ignore_errors=True)
+        super().tearDownClass()
+
+    def upload(self, user, **flags):
+        buffer = io.BytesIO()
+        Image.new("RGB", (4, 4)).save(buffer, format="PNG")
+        image = SimpleUploadedFile("nodule.png", buffer.getvalue(), content_type="image/png")
+        data = {"name": "nodule", "image": image, "public": "false", "research": "false", "declaration": "false"}
+        data.update({key: str(value).lower() for key, value in flags.items()})
+        self.client.force_authenticate(user)
+        return self.client.post(self.url, data, format="multipart")
+
+    def test_sharing_without_declaration_is_rejected(self):
+        for flag in ("public", "research"):
+            with self.subTest(flag=flag):
+                response = self.upload(self.radiologist, **{flag: True})
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("declaration", response.data)
+        self.assertFalse(models.Nodule.objects.exists())
+
+    def test_sharing_with_declaration_is_saved(self):
+        response = self.upload(self.radiologist, research=True, declaration=True)
+        self.assertEqual(response.status_code, 201)
+        nodule = models.Nodule.objects.get(id=response.data["id"])
+        self.assertTrue(nodule.research)
+        self.assertTrue(nodule.declaration)
+
+    def test_only_radiologists_can_share(self):
+        response = self.upload(self.user, public=True, declaration=True)
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(models.Nodule.objects.exists())
+
+    def test_declaration_is_not_stored_without_sharing(self):
+        response = self.upload(self.user, declaration=True)
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(models.Nodule.objects.get(id=response.data["id"]).declaration)
