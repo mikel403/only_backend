@@ -90,7 +90,7 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    'ACCES_TOKEN_LIFETIME': timedelta(minutes=30),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
     'AUTH_HEADER_TYPES': ('JWT',),
    
 }
@@ -152,6 +152,10 @@ DJOSER= {
         "user_create":"core.serializers.UserCreateSerializer",
         "user":"core.serializers.UserSerializer",
         "current_user":"core.serializers.UserSerializer",
-    }
+    },
+    #The username identifies the owner of the uploaded nodules, so users can not change it
+    "PERMISSIONS":{
+        "set_username":["rest_framework.permissions.IsAdminUser"],
+    },
 }
 

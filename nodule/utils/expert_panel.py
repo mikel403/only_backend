@@ -6,7 +6,6 @@ def expertPanel_fn(descriptions):
     desc_final={}
     physicist_list={}
     for description in descriptions:
-        print(description)
         physicist_id=description["user_id"]
         id=description["id"]
         if (physicist_id not in physicist_list) or (id>physicist_list[physicist_id]):

@@ -7,14 +7,14 @@ from django.contrib.auth import get_user_model
 # from django.contrib.contenttypes.prefetch import GenericPrefetch
 
 from rest_framework.decorators import api_view, action,permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework import status
 # from rest_framework.views import APIView
 from rest_framework.mixins import ListModelMixin, CreateModelMixin, RetrieveModelMixin, UpdateModelMixin
 from rest_framework.generics import ListAPIView
 from rest_framework.viewsets import ModelViewSet, GenericViewSet
-from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from nodule.utils.YOLO import convertImageCV, yoloCrop
 from nodule.utils.descriptionModel import results_simple
 
@@ -44,6 +44,21 @@ import random
 #         serializer.save()
 #         return Response(serializer.data, status=status.HTTP_201_CREATED)
 User = get_user_model()
+
+#Applies the _start/_limit pagination used by the frontend
+def paginate(queryset, request):
+    limit=request.GET.get("_limit")
+    if not limit:
+        return queryset
+    try:
+        limit=int(limit)
+        init=int(request.GET.get("_start") or 0)
+    except ValueError:
+        raise ValidationError("_limit and _start must be integers")
+    if limit<0 or init<0:
+        raise ValidationError("_limit and _start must be non-negative")
+    return queryset[init:init+limit]
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_profile_type(user_id):
@@ -121,6 +136,12 @@ class PhysicistViewSet(CreateModelMixin, RetrieveModelMixin, ListModelMixin, Upd
     def get_serializer_context(self):
         return {"user_id":self.request.user.id}
 
+    #Physicians are created by the administrator, users can only edit their own profile through "me"
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update"):
+            return [IsAuthenticated(), IsAdminUser()]
+        return super().get_permissions()
+
     @action(detail=False,methods=["GET","PUT"])
     def me(self,request):
         physicist=get_object_or_404(models.Physicist,user_id=request.user.id)
@@ -178,10 +199,7 @@ class NodulePhysicistViewSet(ListModelMixin,CreateModelMixin,GenericViewSet):
         numNodulesDescribed=Value(described.count())
         if timesDescribed and (timesDescribed!="0" and timesDescribed!="all"):
             numNodules=Value(0)
-            if limit:
-                limit=int(limit)
-                init=int(init)
-                described=described[init:init+limit]
+            described=paginate(described, self.request)
             return described.annotate(numNodules=numNodules,numNodules2Times=numNodules2Times,numNodulesDescribed=numNodulesDescribed)
             
         
@@ -203,21 +221,15 @@ class NodulePhysicistViewSet(ListModelMixin,CreateModelMixin,GenericViewSet):
         if timesDescribed and timesDescribed=="0":
             numNodules2Times=Value(0)
             numNodulesDescribed=Value(0)
-            if limit:
-                limit=int(limit)
-                init=int(init)
-                notDescribed=notDescribed[init:init+limit]
+            notDescribed=paginate(notDescribed, self.request)
             return notDescribed.annotate(numNodules=numNodules,numNodules2Times=numNodules2Times,numNodulesDescribed=numNodulesDescribed)
         
         
         described=described.annotate(numNodules=numNodules,numNodules2Times=numNodules2Times,numNodulesDescribed=numNodulesDescribed)
         notDescribed=notDescribed.annotate(numNodules=numNodules,numNodules2Times=numNodules2Times,numNodulesDescribed=numNodulesDescribed)
         combination = notDescribed.union(described)
-        if limit:
-            limit=int(limit)
-            init=int(init)
-            combination=combination[init:init+limit]
-        
+        combination=paginate(combination, self.request)
+
         # def list(self,request,*args,**kwargs):
         #     param=request.Get.get("param")
         #     print(param)
@@ -255,10 +267,7 @@ class NoduleDescriptionViewSet(ListModelMixin,GenericViewSet):
             
         numNodules2Times=Value(described.filter(numDescriptions__gt=1).count())
         numNodulesDescribed=Value(described.count())
-        if limit:
-            limit=int(limit)
-            init=int(init)
-            described=described[init:init+limit]
+        described=paginate(described, self.request)
         return described.annotate(numNodules2Times=numNodules2Times,numNodulesDescribed=numNodulesDescribed)
             
         
@@ -274,22 +283,21 @@ class NoduleDescriptionViewSet(ListModelMixin,GenericViewSet):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def AIDetection(request):
-    if "image" in request.FILES:
-        image=request.FILES["image"]
-        image=convertImageCV(image)
-        boxes=yoloCrop(image)
+    if "image" not in request.FILES:
+        return Response({"error": "No image provided"}, status=status.HTTP_400_BAD_REQUEST)
+    image=convertImageCV(request.FILES["image"])
+    if image is None:
+        return Response({"error": "Invalid image"}, status=status.HTTP_400_BAD_REQUEST)
+    boxes=yoloCrop(image)
     return Response(boxes)
 
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def AIDescription(request, nodule_id):
-    # Get or create the nodule instance
-    nodule, created = models.Nodule.objects.get_or_create(id=nodule_id)    
+    nodule = get_object_or_404(models.Nodule, id=nodule_id)
     # Get the actual file path of the image
-    print(nodule.name)
     if isInDatabase(nodule.name):
-        print(nodule.name)
         probs=probs_database(nodule.name)
     else:
         image_path = nodule.image.path if nodule.image else None
@@ -413,7 +421,7 @@ def physician_ground_truth(request,nodule_id,physicist__username):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def private_nodule_image(request, pk, which="image"):
-    nodule = models.Nodule.objects.get(pk=pk)
+    nodule = get_object_or_404(models.Nodule, pk=pk)
     f = nodule.image if which == "image" else nodule.full_image
     if not f:
         raise Http404

@@ -61,7 +61,7 @@ def intracorrelation_fn(desc):
     desc_previo={}
     for nodule_id,descs in desc_doble.items():
         id_order=list(descs.keys())
-        id_order.sort
+        id_order.sort()
         desc_previo[nodule_id]=descs[id_order[0]]
         desc_final[nodule_id]=descs[id_order[1]]
     return kappa(desc_final,desc_previo)
@@ -205,7 +205,7 @@ def kappa(y:dict,y_hat:dict,no_birads=False):
     
     if not no_birads:
         num_type_birads=list_div(num_type_birads,num_birads)
-        num_type_birads_h=list_div(num_type_birads_h,len(y_hat))
+        num_type_birads_h=list_div(num_type_birads_h,num_birads)
     
         
     p_casualidad_shape=sum(elememtwise_mul(num_type_shape,num_type_shape_h))
