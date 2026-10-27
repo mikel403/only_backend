@@ -5,6 +5,7 @@ import tempfile
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
+from django.urls import resolve
 from PIL import Image
 from rest_framework.test import APITestCase
 
@@ -77,6 +78,15 @@ class NodulePhysicistPaginationTests(APITestCase):
         self.assertEqual(first["numNodulesDescribed"], 3)
         self.assertEqual(first["numNodules2Times"], 1)
         self.assertNotIn("orderPriority", first)
+
+    def test_private_urls_are_relative_to_the_api(self):
+        # The frontend adds its base url, which includes the /djangoapp prefix in production
+        response = self.client.get("/api/nodules-descriptions/")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data)
+        for nodule in response.data:
+            self.assertEqual(nodule["private_image_url"], f"/api/nodules/{nodule['id']}/image/")
+            self.assertEqual(resolve(nodule["private_full_image_url"]).url_name, "nodule-full-image")
 
 
 #Uploaded files go to a temporary folder instead of the real media folder
