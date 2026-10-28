@@ -78,9 +78,10 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
-    #YOLO detection runs synchronously, so each user can only request a few per minute
+    #YOLO detection and the description model run synchronously, so each user can only request a few per minute
     'DEFAULT_THROTTLE_RATES': {
         'ai_detection': '10/min',
+        'ai_description': '10/min',
     },
 }
 
