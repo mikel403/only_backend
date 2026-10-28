@@ -374,3 +374,38 @@ class DeltaFleissTests(SimpleTestCase):
         with_others[3] = {2: "irregular", 3: "round"}
         with_others[6] = {2: "oval", 3: "oval", 4: "round"}
         self.assertEqual(self.delta(with_others), self.delta(self.base))
+
+
+class ExpertDescriptionCountTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.user = User.objects.create_user(username="student", password="x")
+        cls.expert = User.objects.create_user(username="expert", password="x")
+        cls.second = User.objects.create_user(username="second", password="x")
+        for expert in (cls.expert, cls.second):
+            models.Physicist.objects.create(user=expert)
+        cls.nodule = models.Nodule.objects.create(name="public")
+        # The expert described the nodule three times; the last time without margin
+        for shape, margin in (("oval", "circumscribed"), ("oval", "spiculated"), ("round", None)):
+            models.Description.objects.create(user=cls.expert, nodule=cls.nodule, shape=shape, margin=margin)
+        models.Description.objects.create(user=cls.second, nodule=cls.nodule, shape="oval")
+
+    def setUp(self):
+        self.client.force_authenticate(self.user)
+
+    def test_ground_truth_counts_every_description_of_the_expert(self):
+        response = self.client.post(f"/api/nodules/{self.nodule.id}/expert/physician_ground_truth")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["shape"]["total"], 3)
+        self.assertAlmostEqual(response.data["shape"]["oval"] * 3, 2)
+        self.assertAlmostEqual(response.data["shape"]["round"] * 3, 1)
+        self.assertEqual(response.data["margin"]["total"], 2)
+
+    def test_expert_panel_still_counts_one_vote_per_expert(self):
+        response = self.client.post(f"/api/nodules/{self.nodule.id}/expert-panel")
+        self.assertEqual(response.status_code, 200)
+        # Last description of each expert: round (expert) and oval (second)
+        self.assertEqual(response.data["shape"]["total"], 2)
+        self.assertAlmostEqual(response.data["shape"]["round"], 0.5)
+        self.assertAlmostEqual(response.data["shape"]["oval"], 0.5)
