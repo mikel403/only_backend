@@ -1,3 +1,4 @@
+import importlib
 import io
 import shutil
 import tempfile
@@ -339,6 +340,17 @@ class AIDetectionThrottleTests(APITestCase):
             self.assertEqual(self.detect(self.other).status_code, 200)
 
 
+    def test_ai_descriptions_are_limited_per_user(self):
+        nodule = models.Nodule.objects.create(name="public")
+        self.client.force_authenticate(self.user)
+        # Precomputed probabilities avoid loading the real model
+        with mock.patch("nodule.views.isInDatabase", return_value=True), \
+                mock.patch("nodule.views.probs_database", return_value={}) as probs:
+            for _ in range(10):
+                self.assertEqual(self.client.post(f"/api/nodules/{nodule.id}/AIDescription").status_code, 200)
+            self.assertEqual(self.client.post(f"/api/nodules/{nodule.id}/AIDescription").status_code, 429)
+            self.assertEqual(probs.call_count, 10)
+
 class DeltaFleissTests(SimpleTestCase):
     user = 1
 
@@ -376,6 +388,7 @@ class DeltaFleissTests(SimpleTestCase):
         self.assertEqual(self.delta(with_others), self.delta(self.base))
 
 
+
 class ExpertDescriptionCountTests(APITestCase):
     @classmethod
     def setUpTestData(cls):
@@ -409,3 +422,14 @@ class ExpertDescriptionCountTests(APITestCase):
         self.assertEqual(response.data["shape"]["total"], 2)
         self.assertAlmostEqual(response.data["shape"]["round"], 0.5)
         self.assertAlmostEqual(response.data["shape"]["oval"], 0.5)
+
+
+class OrientationMigrationTests(APITestCase):
+    def test_rollback_keeps_not_assessed_orientations(self):
+        from django.apps import apps
+        migration = importlib.import_module("nodule.migrations.0015_remove_no_orientation")
+        nodule = models.Nodule.objects.create(name="public")
+        description = models.Description.objects.create(ai=models.AI.objects.create(name="AI"), nodule=nodule, orientation=None)
+        migration.backwards(apps, None)
+        description.refresh_from_db()
+        self.assertIsNone(description.orientation)

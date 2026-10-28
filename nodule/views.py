@@ -313,8 +313,13 @@ def AIDetection(request):
     return Response(boxes)
 
 
+#The description model also runs synchronously
+class AIDescriptionThrottle(UserRateThrottle):
+    scope="ai_description"
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AIDescriptionThrottle])
 def AIDescription(request, nodule_id):
     nodule = get_object_or_404(visible_nodules(request.user), id=nodule_id)
     # Get the actual file path of the image

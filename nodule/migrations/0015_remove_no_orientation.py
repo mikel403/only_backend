@@ -9,10 +9,9 @@ def forwards(apps, schema_editor):
 
 
 def backwards(apps, schema_editor):
-    Description = apps.get_model("nodule", "Description")
-    # If you ever roll back, restore NULL back to the legacy string.
-    # (Even though the choice won't exist anymore, this keeps the migration reversible.)
-    Description.objects.filter(orientation__isnull=True).update(orientation="no orientation")
+    # Intentionally does nothing: after the forwards step NULL also means "not assessed",
+    # so turning every NULL into "no orientation" would invent values that were never given
+    pass
 
 
 class Migration(migrations.Migration):
