@@ -446,7 +446,8 @@ def physician_ground_truth(request,nodule_id,physicist__username):
     if not descriptions.exists():
         raise NotFound(detail="description_not_found")
     desc_serializer=serializers.DescriptionSerializer(descriptions,many=True)
-    result=expertPanel_fn(desc_serializer.data)
+    #Every time the selected expert described this nodule is counted, not only the last one
+    result=expertPanel_fn(desc_serializer.data, latest_only=False)
     return Response(result)
 
 @api_view(["GET"])

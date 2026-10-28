@@ -4,6 +4,7 @@ from .common import *
 DEBUG = False
 
 FORCE_SCRIPT_NAME = '/djangoapp'
+STATIC_URL = "/djangoapp/static/"
 
 # SECURITY WARNING: keep the secret key used in production secret!
 

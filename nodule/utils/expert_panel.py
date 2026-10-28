@@ -1,5 +1,7 @@
 from .descriptors import *
-def expertPanel_fn(descriptions):
+#latest_only=True: one vote per expert (their last description), used by the expert panel.
+#latest_only=False: every description counts, used to show all the times a single expert described the nodule
+def expertPanel_fn(descriptions, latest_only=True):
     statistics={descriptor:{} for descriptor in descriptors}
     physicist_id=[]
 
@@ -12,8 +14,8 @@ def expertPanel_fn(descriptions):
             desc_final[physicist_id]=description
             physicist_list[physicist_id]=id
 
-
-    for physicist_id,desc in desc_final.items():
+    selected=desc_final.values() if latest_only else descriptions
+    for desc in selected:
         for key,carac in desc.items():
             if key in ["id","content_type_id","object_id","nodule_id","user_id"]:
                 continue
