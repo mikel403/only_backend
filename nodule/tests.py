@@ -1,13 +1,16 @@
+import csv
 import importlib
 import io
 import shutil
 import tempfile
+import zoneinfo
+from datetime import datetime
 from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import resolve
 from PIL import Image
 from rest_framework.test import APITestCase
@@ -433,3 +436,70 @@ class OrientationMigrationTests(APITestCase):
         migration.backwards(apps, None)
         description.refresh_from_db()
         self.assertIsNone(description.orientation)
+
+
+class DescriptionAdminTests(TestCase):
+    url = "/admin/nodule/description/"
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.admin = User.objects.create_superuser(username="admin", password="x")
+        cls.staff = User.objects.create_user(username="student", password="x")
+        cls.expert = User.objects.create_user(username="expert", password="x")
+        models.Physicist.objects.create(user=cls.expert)
+        cls.ai = models.AI.objects.create(name="AI_test")
+        cls.nodule = models.Nodule.objects.create(name="public")
+        madrid = zoneinfo.ZoneInfo("Europe/Madrid")
+        cls.old = models.Description.objects.create(user=cls.expert, nodule=cls.nodule, shape="oval", birads="3")
+        cls.new = models.Description.objects.create(user=cls.staff, nodule=cls.nodule, shape="round", birads="4A")
+        cls.by_ai = models.Description.objects.create(ai=cls.ai, nodule=cls.nodule, shape="oval", birads="3")
+        # time is auto_now_add, so the dates are set after creating the rows
+        models.Description.objects.filter(id=cls.old.id).update(time=datetime(2026, 3, 2, 10, 0, tzinfo=madrid))
+        models.Description.objects.filter(id=cls.new.id).update(time=datetime(2026, 3, 20, 23, 30, tzinfo=madrid))
+        models.Description.objects.filter(id=cls.by_ai.id).update(time=datetime(2026, 4, 1, 9, 0, tzinfo=madrid))
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def listed_ids(self, **params):
+        response = self.client.get(self.url, params)
+        self.assertEqual(response.status_code, 200)
+        return sorted(d.id for d in response.context["cl"].result_list)
+
+    def test_only_staff_can_open_it(self):
+        self.client.force_login(self.staff)
+        self.assertEqual(self.client.get(self.url).status_code, 302)
+
+    def test_descriptions_are_read_only(self):
+        self.assertEqual(self.client.get(self.url + "add/").status_code, 403)
+        response = self.client.post(f"{self.url}{self.old.id}/change/", {"shape": "round"})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.client.post(f"{self.url}{self.old.id}/delete/", {"post": "yes"}).status_code, 403)
+        response = self.client.get(self.url)
+        self.assertNotIn("delete_selected", response.context["action_form"].fields["action"].choices.__str__())
+        self.assertEqual(models.Description.objects.get(id=self.old.id).shape, "oval")
+
+    def test_date_range_filter_uses_madrid_dates(self):
+        # 20 March 23:30 in Madrid is already 21 March in some other zones, but here it belongs to the 20th
+        ids = self.listed_ids(time__range__gte="2026-03-01", time__range__lte="2026-03-20")
+        self.assertEqual(ids, sorted([self.old.id, self.new.id]))
+        self.assertEqual(self.listed_ids(time__range__gte="2026-03-21"), [self.by_ai.id])
+
+    def test_author_type_filter(self):
+        self.assertEqual(self.listed_ids(author_type="radiologist"), [self.old.id])
+        self.assertEqual(self.listed_ids(author_type="user"), [self.new.id])
+        self.assertEqual(self.listed_ids(author_type="ai"), [self.by_ai.id])
+
+    def test_export_csv(self):
+        response = self.client.post(self.url, {
+            "action": "export_csv",
+            "_selected_action": [self.old.id, self.by_ai.id],
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv; charset=utf-8")
+        rows = list(csv.reader(io.StringIO(response.content.decode("utf-8-sig"))))
+        self.assertEqual(rows[0][:4], ["description_id", "time", "author", "author_type"])
+        self.assertEqual(rows[1][:4], [str(self.old.id), "2026-03-02 10:00:00", "expert", "radiologist"])
+        self.assertEqual(rows[2][2:4], ["AI_test", "ai"])
+        self.assertEqual(len(rows), 3)
