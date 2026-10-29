@@ -3,16 +3,16 @@ from .descriptors import *
 #latest_only=False: every description counts, used to show all the times a single expert described the nodule
 def expertPanel_fn(descriptions, latest_only=True):
     statistics={descriptor:{} for descriptor in descriptors}
-    physicist_id=[]
+    physician_id=[]
 
     desc_final={}
-    physicist_list={}
+    physician_list={}
     for description in descriptions:
-        physicist_id=description["user_id"]
+        physician_id=description["user_id"]
         id=description["id"]
-        if (physicist_id not in physicist_list) or (id>physicist_list[physicist_id]):
-            desc_final[physicist_id]=description
-            physicist_list[physicist_id]=id
+        if (physician_id not in physician_list) or (id>physician_list[physician_id]):
+            desc_final[physician_id]=description
+            physician_list[physician_id]=id
 
     selected=desc_final.values() if latest_only else descriptions
     for desc in selected:

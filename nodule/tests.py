@@ -20,7 +20,7 @@ from .utils.correlation import delta_fleiss_for_user
 from .utils.descriptors import descriptors
 
 
-class NodulePhysicistPaginationTests(APITestCase):
+class NodulePhysicianPaginationTests(APITestCase):
     url = "/api/nodules/"
 
     @classmethod
@@ -106,7 +106,7 @@ class NoduleUploadConsentTests(APITestCase):
     def setUpTestData(cls):
         User = get_user_model()
         cls.radiologist = User.objects.create_user(username="radiologist", password="x")
-        models.Physicist.objects.create(user=cls.radiologist)
+        models.Physician.objects.create(user=cls.radiologist)
         cls.user = User.objects.create_user(username="student", password="x")
 
     @classmethod
@@ -206,7 +206,7 @@ class DescriptionVisibilityTests(APITestCase):
         User = get_user_model()
         cls.user = User.objects.create_user(username="radiologist", password="x")
         cls.expert = User.objects.create_user(username="expert", password="x")
-        models.Physicist.objects.create(user=cls.expert)
+        models.Physician.objects.create(user=cls.expert)
         cls.student = User.objects.create_user(username="student", password="x")
         cls.ai = models.AI.objects.create(name="AI_test")
         cls.public = models.Nodule.objects.create(name="public")
@@ -287,7 +287,7 @@ class TestUserReadOnlyTests(APITestCase):
         requests = [
             ("post", f"/api/nodules/{self.nodule.id}/descriptions/", {"birads": "3"}),
             ("post", "/api/nodules/", {"name": "nodule"}),
-            ("put", "/api/physicists/me/", {"experience": 3}),
+            ("put", "/api/physicians/me/", {"experience": 3}),
             ("put", "/auth/users/me/", {"first_name": "changed"}),
             ("patch", "/auth/users/me/", {"first_name": "changed"}),
             ("delete", "/auth/users/me/", {"current_password": "Uned-2026-train"}),
@@ -400,7 +400,7 @@ class ExpertDescriptionCountTests(APITestCase):
         cls.expert = User.objects.create_user(username="expert", password="x")
         cls.second = User.objects.create_user(username="second", password="x")
         for expert in (cls.expert, cls.second):
-            models.Physicist.objects.create(user=expert)
+            models.Physician.objects.create(user=expert)
         cls.nodule = models.Nodule.objects.create(name="public")
         # The expert described the nodule three times; the last time without margin
         for shape, margin in (("oval", "circumscribed"), ("oval", "spiculated"), ("round", None)):
@@ -447,7 +447,7 @@ class DescriptionAdminTests(TestCase):
         cls.admin = User.objects.create_superuser(username="admin", password="x")
         cls.staff = User.objects.create_user(username="student", password="x")
         cls.expert = User.objects.create_user(username="expert", password="x")
-        models.Physicist.objects.create(user=cls.expert)
+        models.Physician.objects.create(user=cls.expert)
         cls.ai = models.AI.objects.create(name="AI_test")
         cls.nodule = models.Nodule.objects.create(name="public")
         madrid = zoneinfo.ZoneInfo("Europe/Madrid")
@@ -513,7 +513,7 @@ class UserAdminTests(TestCase):
         User = get_user_model()
         cls.admin = User.objects.create_superuser(username="admin", password="x")
         cls.expert = User.objects.create_user(username="expert", password="x")
-        models.Physicist.objects.create(user=cls.expert, experience=10)
+        models.Physician.objects.create(user=cls.expert, experience=10)
         cls.student = User.objects.create_user(username="student", password="x")
         cls.test_user = User.objects.create_user(username="TestUser", password="x")
         models.TestUser.objects.create(user=cls.test_user)
@@ -534,8 +534,8 @@ class UserAdminTests(TestCase):
     def rows(self, url, **params):
         response = self.client.get(url, params)
         self.assertEqual(response.status_code, 200)
-        # Rows are users in the user list and Physicist objects in the radiologist list
-        return {(row.user if isinstance(row, models.Physicist) else row).username: row for row in response.context["cl"].result_list}
+        # Rows are users in the user list and Physician objects in the radiologist list
+        return {(row.user if isinstance(row, models.Physician) else row).username: row for row in response.context["cl"].result_list}
 
     def test_activity_columns(self):
         rows = self.rows(self.url)
@@ -565,13 +565,166 @@ class UserAdminTests(TestCase):
             "action": "make_radiologist",
             "_selected_action": [self.student.id, self.test_user.id, self.expert.id],
         })
-        self.assertTrue(models.Physicist.objects.filter(user=self.student).exists())
-        self.assertFalse(models.Physicist.objects.filter(user=self.test_user).exists())
-        self.assertEqual(models.Physicist.objects.get(user=self.expert).experience, 10)
+        self.assertTrue(models.Physician.objects.filter(user=self.student).exists())
+        self.assertFalse(models.Physician.objects.filter(user=self.test_user).exists())
+        self.assertEqual(models.Physician.objects.get(user=self.expert).experience, 10)
 
     def test_radiologist_list_shows_activity(self):
-        rows = self.rows("/admin/nodule/physicist/")
+        rows = self.rows("/admin/nodule/physician/")
         self.assertEqual(set(rows), {"expert"})
         self.assertEqual(rows["expert"].num_descriptions, 3)
         self.assertEqual(rows["expert"].num_uploaded, 2)
-        self.assertEqual(self.client.get(f"/admin/nodule/physicist/{self.expert.id}/change/").status_code, 200)
+        self.assertEqual(self.client.get(f"/admin/nodule/physician/{self.expert.id}/change/").status_code, 200)
+
+
+def png_file(name="nodule.png"):
+    buffer = io.BytesIO()
+    Image.new("RGB", (4, 4)).save(buffer, format="PNG")
+    return SimpleUploadedFile(name, buffer.getvalue(), content_type="image/png")
+
+
+class NoduleCreatedMigrationTests(TestCase):
+    def test_uploads_get_their_first_description_date(self):
+        from django.apps import apps
+        migration = importlib.import_module("nodule.migrations.0021_nodule_created")
+        madrid = zoneinfo.ZoneInfo("Europe/Madrid")
+        user = get_user_model().objects.create_user(username="expert", password="x")
+        uploaded = models.Nodule.objects.create(name="uploaded", new="expert")
+        never_described = models.Nodule.objects.create(name="never", new="expert")
+        public = models.Nodule.objects.create(name="public")
+        for when in (datetime(2026, 2, 1, tzinfo=madrid), datetime(2026, 1, 1, tzinfo=madrid)):
+            d = models.Description.objects.create(user=user, nodule=uploaded)
+            models.Description.objects.filter(id=d.id).update(time=when)
+        models.Description.objects.create(user=user, nodule=public)
+        # Rows created before the field existed had no date
+        models.Nodule.objects.update(created=None)
+        migration.fill_created(apps, None)
+        self.assertEqual(models.Nodule.objects.get(id=uploaded.id).created, datetime(2026, 1, 1, tzinfo=madrid))
+        self.assertIsNone(models.Nodule.objects.get(id=never_described.id).created)
+        self.assertIsNone(models.Nodule.objects.get(id=public.id).created)
+
+    def test_new_uploads_store_their_date(self):
+        self.assertIsNotNone(models.Nodule.objects.create(name="new", new="expert").created)
+
+
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
+class NoduleAdminTests(TestCase):
+    url = "/admin/nodule/nodule/"
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.admin = User.objects.create_superuser(username="admin", password="x")
+        cls.student = User.objects.create_user(username="student", password="x", is_staff=False)
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(models.Nodule._meta.get_field("image").storage.location, ignore_errors=True)
+        super().tearDownClass()
+
+    def setUp(self):
+        # Files are not rolled back with the database, so each test gets its own
+        self.public = models.Nodule.objects.create(name="public", image=png_file("public.png"))
+        self.uploaded = models.Nodule.objects.create(name="uploaded", new="expert", image=png_file("uploaded.png"))
+        self.other = models.Nodule.objects.create(name="other", new="expert")
+        models.Description.objects.create(user=self.student, nodule=self.uploaded, birads="3")
+        self.client.force_login(self.admin)
+
+    def image_url(self, nodule, which="image"):
+        return f"{self.url}{nodule.id}/image/{which}/"
+
+    def test_list_filters_and_links(self):
+        response = self.client.get(self.url, {"origin": "uploaded"})
+        self.assertEqual({n.name for n in response.context["cl"].result_list}, {"uploaded", "other"})
+        response = self.client.get(self.url, {"origin": "public"})
+        self.assertEqual({n.name for n in response.context["cl"].result_list}, {"public"})
+        self.assertContains(self.client.get(self.url), self.image_url(self.uploaded))
+        response = self.client.get(f"/admin/nodule/description/?nodule__id__exact={self.uploaded.id}")
+        self.assertEqual(len(response.context["cl"].result_list), 1)
+
+    def test_images_are_only_served_to_staff(self):
+        response = self.client.get(self.image_url(self.uploaded))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(b"".join(response.streaming_content).startswith(b"\x89PNG"))
+        self.assertEqual(self.client.get(self.image_url(self.uploaded, "full")).status_code, 404)
+        self.assertEqual(self.client.get(self.image_url(self.uploaded, "other")).status_code, 404)
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get(self.image_url(self.uploaded)).status_code, 302)
+
+    def test_nodules_are_read_only(self):
+        self.assertEqual(self.client.get(self.url + "add/").status_code, 403)
+        self.client.post(f"{self.url}{self.uploaded.id}/change/", {"name": "renamed"})
+        self.assertEqual(models.Nodule.objects.get(id=self.uploaded.id).name, "uploaded")
+
+    def test_public_nodules_can_not_be_deleted(self):
+        self.assertEqual(self.client.post(f"{self.url}{self.public.id}/delete/", {"post": "yes"}).status_code, 403)
+        response = self.client.post(self.url, {"action": "delete_selected", "_selected_action": [self.public.id, self.other.id], "post": "yes"}, follow=True)
+        self.assertContains(response, "can not be deleted")
+        self.assertEqual(models.Nodule.objects.count(), 3)
+
+    def test_deleting_an_upload_removes_its_file_and_descriptions(self):
+        storage = models.Nodule._meta.get_field("image").storage
+        name = self.uploaded.image.name
+        self.assertTrue(storage.exists(name))
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(f"{self.url}{self.uploaded.id}/delete/", {"post": "yes"})
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(models.Nodule.objects.filter(id=self.uploaded.id).exists())
+        self.assertFalse(models.Description.objects.exists())
+        self.assertFalse(storage.exists(name))
+        self.assertTrue(storage.exists(self.public.image.name))
+
+    def test_bulk_delete_of_uploads(self):
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.post(self.url, {"action": "delete_selected", "_selected_action": [self.uploaded.id, self.other.id], "post": "yes"})
+        self.assertEqual(list(models.Nodule.objects.values_list("name", flat=True)), ["public"])
+
+
+class PublicDatasetFlagsMigrationTests(TestCase):
+    def test_only_the_public_dataset_is_marked(self):
+        from django.apps import apps
+        migration = importlib.import_module("nodule.migrations.0022_public_dataset_flags")
+        public = models.Nodule.objects.create(name="public")
+        uploaded = models.Nodule.objects.create(name="uploaded", new="expert", research=True, declaration=True)
+        private = models.Nodule.objects.create(name="private", new="expert")
+        migration.mark_public_dataset(apps, None)
+        flags = lambda n: models.Nodule.objects.filter(id=n.id).values_list("public", "research", "declaration").get()
+        self.assertEqual(flags(public), (True, True, True))
+        self.assertEqual(flags(uploaded), (False, True, True))
+        self.assertEqual(flags(private), (False, False, False))
+
+
+class RenamePhysicianMigrationTests(TestCase):
+    def test_permissions_keep_their_assignments(self):
+        from django.apps import apps
+        from django.contrib.auth.models import Group, Permission
+        migration = importlib.import_module("nodule.migrations.0023_rename_physicist_physician")
+        # The state before the migration: the permission still had the old name and a group had it
+        permission = Permission.objects.get(content_type__app_label="nodule", codename="change_physician")
+        Permission.objects.filter(id=permission.id).update(codename="change_physicist", name="Can change physicist")
+        group = Group.objects.create(name="editors")
+        group.permissions.add(permission)
+        migration.rename_permissions(apps, None)
+        permission.refresh_from_db()
+        self.assertEqual((permission.codename, permission.name), ("change_physician", "Can change physician"))
+        self.assertIn(permission, group.permissions.all())
+
+
+class ExpertPanelDatesMigrationTests(TestCase):
+    def test_expert_descriptions_move_to_2023_keeping_their_order(self):
+        from django.apps import apps
+        migration = importlib.import_module("nodule.migrations.0024_expert_panel_dates_2023")
+        User = get_user_model()
+        nodule = models.Nodule.objects.create(name="public")
+        ana = User.objects.create_user(username="Ana", password="x")
+        other = User.objects.create_user(username="student", password="x")
+        for _ in range(3):
+            models.Description.objects.create(user=ana, nodule=nodule)
+        mine = models.Description.objects.create(user=other, nodule=nodule)
+        models.Description.objects.update(time=datetime(2031, 5, 1, tzinfo=zoneinfo.ZoneInfo("UTC")))
+        migration.move_to_2023(apps, None)
+        times = list(models.Description.objects.filter(user=ana).order_by("id").values_list("time", flat=True))
+        self.assertTrue(all(t.year == 2023 for t in times))
+        self.assertEqual(times, sorted(times))
+        self.assertEqual(len(set(times)), 3)
+        self.assertEqual(models.Description.objects.get(id=mine.id).time.year, 2031)

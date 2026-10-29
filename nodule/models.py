@@ -31,12 +31,14 @@ class Nodule(models.Model):
     research=models.BooleanField(default=False)
     #If an image will be made public or used for research, a declaration that they have the information to delete the images if asked by the patient
     declaration=models.BooleanField(default=False)
+    #Upload date; NULL for the public dataset (and for uploads older than this field that were never described)
+    created=models.DateTimeField(auto_now_add=True,null=True)
     
 
 
 class Description(models.Model):
 
-    # physicist=models.ForeignKey(Physicist,on_delete=models.CASCADE, related_name="descriptions")
+    # physician=models.ForeignKey(Physician,on_delete=models.CASCADE, related_name="descriptions")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="descriptions")
     ai = models.ForeignKey("AI", null=True, blank=True, on_delete=models.CASCADE, related_name="descriptions")
     nodule=models.ForeignKey(Nodule,on_delete=models.CASCADE, related_name="descriptions")
@@ -115,7 +117,7 @@ class Description(models.Model):
     birads=models.CharField(max_length=20,choices=BIRADS_CHOICES,null=True)
 
     
-    # physicist=models.CharField(max_length=255,default="doctor prueba")
+    # physician=models.CharField(max_length=255,default="doctor prueba")
     # descriptors=models.ManyToManyField(Descriptors)
     time=models.DateTimeField(auto_now_add=True)
 
@@ -134,7 +136,7 @@ class Description(models.Model):
             models.Index(fields=["ai", "nodule"]),
         ]
     
-class Physicist(models.Model):
+class Physician(models.Model):
     user=models.OneToOneField(settings.AUTH_USER_MODEL,primary_key=True,on_delete=models.CASCADE)
     experience=models.PositiveIntegerField(null=True, blank=True)
     profession=models.CharField(max_length=255,null=True, blank=True)

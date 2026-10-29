@@ -1,11 +1,14 @@
 import csv
 
 from django.contrib import admin, messages
+from django.contrib.admin.actions import delete_selected
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.db.models import Count, IntegerField, Max, Min, OuterRef, Subquery, Value
 from django.db.models.functions import Coalesce
-from django.http import HttpResponse
+from django.http import FileResponse, Http404, HttpResponse
+from django.shortcuts import get_object_or_404
+from django.urls import path
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
@@ -25,8 +28,6 @@ class AIAdmin(admin.ModelAdmin):
 
 
 
-admin.site.register(models.Nodule)
-# admin.site.register(models.Physicist)
 
 
 #Descriptor fields in the order they are shown and exported
@@ -43,9 +44,9 @@ class AuthorTypeFilter(admin.SimpleListFilter):
     def queryset(self, request, queryset):
         value = self.value()
         if value == "radiologist":
-            return queryset.filter(user__physicist__isnull=False)
+            return queryset.filter(user__physician__isnull=False)
         if value == "user":
-            return queryset.filter(user__isnull=False, user__physicist__isnull=True, user__testuser__isnull=True)
+            return queryset.filter(user__isnull=False, user__physician__isnull=True, user__testuser__isnull=True)
         if value == "test":
             return queryset.filter(user__testuser__isnull=False)
         if value == "ai":
@@ -97,11 +98,11 @@ class DescriptionAdmin(admin.ModelAdmin):
         response.write("﻿")
         writer = csv.writer(response)
         writer.writerow(["description_id", "time", "author", "author_type", "nodule_id", "nodule_name", "uploaded_by", *DESCRIPTOR_FIELDS])
-        rows = queryset.select_related("user__physicist", "user__testuser", "ai", "nodule").order_by("time")
+        rows = queryset.select_related("user__physician", "user__testuser", "ai", "nodule").order_by("time")
         for d in rows:
             if d.ai:
                 author, author_type = d.ai.name, "ai"
-            elif hasattr(d.user, "physicist"):
+            elif hasattr(d.user, "physician"):
                 author, author_type = d.user.username, "radiologist"
             elif hasattr(d.user, "testuser"):
                 author, author_type = d.user.username, "test"
@@ -172,9 +173,9 @@ class RoleFilter(admin.SimpleListFilter):
     def queryset(self, request, queryset):
         value = self.value()
         if value == "radiologist":
-            return queryset.filter(physicist__isnull=False)
+            return queryset.filter(physician__isnull=False)
         if value == "user":
-            return queryset.filter(physicist__isnull=True, testuser__isnull=True)
+            return queryset.filter(physician__isnull=True, testuser__isnull=True)
         if value == "test":
             return queryset.filter(testuser__isnull=False)
         return queryset
@@ -192,11 +193,11 @@ class UserAdmin(ActivityColumns, BaseUserAdmin):
     actions = ["make_radiologist"]
 
     def get_queryset(self, request):
-        return annotate_activity(super().get_queryset(request)).select_related("physicist", "testuser")
+        return annotate_activity(super().get_queryset(request)).select_related("physician", "testuser")
 
     @admin.display(description="role")
     def role(self, obj):
-        if hasattr(obj, "physicist"):
+        if hasattr(obj, "physician"):
             return "Radiologist"
         if hasattr(obj, "testuser"):
             return "Test user"
@@ -206,19 +207,19 @@ class UserAdmin(ActivityColumns, BaseUserAdmin):
     @admin.action(description="Make the selected users radiologists")
     def make_radiologist(self, request, queryset):
         created = skipped = 0
-        for user in queryset.select_related("physicist", "testuser"):
+        for user in queryset.select_related("physician", "testuser"):
             if hasattr(user, "testuser") or user.username == "TestUser":
                 skipped += 1
                 continue
-            _, is_new = models.Physicist.objects.get_or_create(user=user)
+            _, is_new = models.Physician.objects.get_or_create(user=user)
             created += is_new
         self.message_user(request, f"{created} user(s) are now radiologists.", messages.SUCCESS)
         if skipped:
             self.message_user(request, f"{skipped} test user(s) skipped.", messages.WARNING)
 
 
-@admin.register(models.Physicist)
-class PhysicistAdmin(ActivityColumns, admin.ModelAdmin):
+@admin.register(models.Physician)
+class PhysicianAdmin(ActivityColumns, admin.ModelAdmin):
     list_display = ["username", "first_name", "last_name", "experience", "profession", *ACTIVITY_COLUMNS]
     search_fields = ["user__username", "user__first_name", "user__last_name", "profession"]
     list_select_related = ["user"]
@@ -233,3 +234,128 @@ class PhysicistAdmin(ActivityColumns, admin.ModelAdmin):
 
     def user_of(self, obj):
         return obj.user
+
+
+class OriginFilter(admin.SimpleListFilter):
+    title = "origin"
+    parameter_name = "origin"
+
+    def lookups(self, request, model_admin):
+        return [("public", "Public dataset"), ("uploaded", "Uploaded by users")]
+
+    def queryset(self, request, queryset):
+        if self.value() == "public":
+            return queryset.filter(new__isnull=True)
+        if self.value() == "uploaded":
+            return queryset.filter(new__isnull=False)
+        return queryset
+
+
+#Nodules can be reviewed (with their images) and uploaded ones deleted; the public dataset can never be deleted
+@admin.register(models.Nodule)
+class NoduleAdmin(admin.ModelAdmin):
+    list_display = ["thumbnail", "name", "uploaded_by", "created", "public", "research", "declaration", "descriptions_link", "describers"]
+    list_display_links = ["thumbnail", "name"]
+    list_filter = [
+        OriginFilter,
+        ("created", DateRangeFilterBuilder(title="upload date")),
+        "new",
+        "public",
+        "research",
+        "declaration",
+    ]
+    search_fields = ["name", "new"]
+    ordering = ["-created", "-id"]
+    list_per_page = 50
+    fields = ["name", "uploaded_by", "created", "public", "research", "declaration", "image_preview", "full_image_preview"]
+    readonly_fields = fields
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(
+            num_descriptions=Count("descriptions", distinct=True),
+            num_describers=Count("descriptions__user", distinct=True),
+        )
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is not None and obj.new is None:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    #The bulk delete keeps its name because Django's confirmation page posts back "delete_selected"
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if "delete_selected" in actions:
+            _, name, description = actions["delete_selected"]
+            actions["delete_selected"] = (type(self).delete_uploaded_only, name, description)
+        return actions
+
+    def delete_uploaded_only(self, request, queryset):
+        if queryset.filter(new__isnull=True).exists():
+            self.message_user(request, "Nodules from the public dataset can not be deleted. Unselect them and try again.", messages.ERROR)
+            return None
+        return delete_selected(self, request, queryset)
+
+    #Descriptions can not be deleted on their own, but they go with their uploaded nodule
+    def get_deleted_objects(self, objs, request):
+        deleted, counts, perms_needed, protected = super().get_deleted_objects(objs, request)
+        perms_needed.discard(models.Description._meta.verbose_name)
+        return deleted, counts, perms_needed, protected
+
+    def delete_queryset(self, request, queryset):
+        # Deleted one by one so the files of each nodule are removed too
+        for nodule in queryset.filter(new__isnull=False):
+            nodule.delete()
+
+    #Private images are not served publicly, so the admin has its own staff-only view
+    def get_urls(self):
+        custom = [
+            path("<int:pk>/image/<str:which>/", self.admin_site.admin_view(self.image_view), name="nodule_nodule_image"),
+        ]
+        return custom + super().get_urls()
+
+    def image_view(self, request, pk, which):
+        if not self.has_view_permission(request):
+            raise Http404
+        nodule = get_object_or_404(models.Nodule, pk=pk)
+        image = nodule.image if which == "image" else nodule.full_image if which == "full" else None
+        if not image:
+            raise Http404
+        return FileResponse(image.open("rb"))
+
+    def image_tag(self, obj, which, max_height):
+        image = obj.image if which == "image" else obj.full_image
+        if not image:
+            return "-"
+        url = reverse("admin:nodule_nodule_image", args=[obj.pk, which])
+        return format_html('<a href="{0}" target="_blank"><img src="{0}" style="max-height:{1}px;max-width:100%"></a>', url, max_height)
+
+    @admin.display(description="image")
+    def thumbnail(self, obj):
+        return self.image_tag(obj, "image", 60)
+
+    @admin.display(description="image")
+    def image_preview(self, obj):
+        return self.image_tag(obj, "image", 400)
+
+    @admin.display(description="full image")
+    def full_image_preview(self, obj):
+        return self.image_tag(obj, "full", 400)
+
+    @admin.display(description="uploaded by", ordering="new")
+    def uploaded_by(self, obj):
+        return obj.new or "Public dataset"
+
+    @admin.display(description="descriptions", ordering="num_descriptions")
+    def descriptions_link(self, obj):
+        url = reverse("admin:nodule_description_changelist") + f"?nodule__id__exact={obj.id}"
+        return format_html('<a href="{}">{}</a>', url, obj.num_descriptions)
+
+    @admin.display(description="users who described it", ordering="num_describers")
+    def describers(self, obj):
+        return obj.num_describers

@@ -72,8 +72,8 @@ def paginate(queryset, request):
 def get_profile_type(user_id):
     User = get_user_model()
 
-    if models.Physicist.objects.filter(user_id=user_id).exists():
-        return "physicist"
+    if models.Physician.objects.filter(user_id=user_id).exists():
+        return "physician"
     elif models.AI.objects.filter(id=user_id).exists():
         return "ai"
     elif models.TestUser.objects.filter(user_id=user_id).exists():
@@ -102,14 +102,14 @@ class DescriptionViewSet(ListModelMixin, CreateModelMixin,GenericViewSet):
         
         return models.Description.objects.filter(nodule_id=self.kwargs["nodule_pk"],user=self.request.user).select_related("user","ai")
     
-#We are going to create a view for an url that takes the last description of a nodule given by a physicist. This physicist will appear as first name in this url.
+#We are going to create a view for an url that takes the last description of a nodule given by a physician. This physician will appear as first name in this url.
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
-def Description_detail(request,nodule_id,physicist__username):
-    # description=get_object_or_404(models.Description.objects, nodule_id=nodule_id, physicist__user__first_name=physicist__first_name,)
+def Description_detail(request,nodule_id,physician__username):
+    # description=get_object_or_404(models.Description.objects, nodule_id=nodule_id, physician__user__first_name=physician__first_name,)
     if not visible_nodules(request.user).filter(id=nodule_id).exists():
         raise Http404()
-    description=models.Description.objects.filter(nodule_id=nodule_id,user__username=physicist__username,user__physicist__isnull=False).select_related("user").last()
+    description=models.Description.objects.filter(nodule_id=nodule_id,user__username=physician__username,user__physician__isnull=False).select_related("user").last()
     if description:
         serializer=serializers.DescriptionSerializer(description,many=False)
     else:
@@ -122,7 +122,7 @@ def Description_detail(request,nodule_id,physicist__username):
     
 
 
-#We generate a view to obtain all descriptions given by the physicist
+#We generate a view to obtain all descriptions given by the physician
 @permission_classes([IsAuthenticated])
 class DescriptionmeViewSet(ListModelMixin,GenericViewSet):
     serializer_class=serializers.DescriptionSerializer
@@ -142,9 +142,9 @@ def DescriptionAIViewSet(request,AI_name):
     return Response(serializer.data)
         
 @permission_classes([IsAuthenticated, ReadOnlyForTestUser])
-class PhysicistViewSet(CreateModelMixin, RetrieveModelMixin, ListModelMixin, UpdateModelMixin, GenericViewSet):
-    queryset=models.Physicist.objects.all()
-    serializer_class=serializers.PhysicistSerializer
+class PhysicianViewSet(CreateModelMixin, RetrieveModelMixin, ListModelMixin, UpdateModelMixin, GenericViewSet):
+    queryset=models.Physician.objects.all()
+    serializer_class=serializers.PhysicianSerializer
     def get_serializer_context(self):
         return {"user_id":self.request.user.id}
 
@@ -156,12 +156,12 @@ class PhysicistViewSet(CreateModelMixin, RetrieveModelMixin, ListModelMixin, Upd
 
     @action(detail=False,methods=["GET","PUT"])
     def me(self,request):
-        physicist=get_object_or_404(models.Physicist,user_id=request.user.id)
+        physician=get_object_or_404(models.Physician,user_id=request.user.id)
         if request.method=="GET":
-            serializer=serializers.PhysicistSerializer(physicist)
+            serializer=serializers.PhysicianSerializer(physician)
             return Response(serializer.data)
         elif request.method=="PUT":
-            serializer=serializers.PhysicistSerializer(physicist,data=request.data)
+            serializer=serializers.PhysicianSerializer(physician,data=request.data)
             serializer.is_valid(raise_exception=True)
             serializer.save()
             return Response(serializer.data)
@@ -174,10 +174,10 @@ class PhysicistViewSet(CreateModelMixin, RetrieveModelMixin, ListModelMixin, Upd
 #         return {"request":self.request}
 
 @permission_classes([IsAuthenticated, ReadOnlyForTestUser])
-class NodulePhysicistViewSet(ListModelMixin,CreateModelMixin,GenericViewSet):
+class NodulePhysicianViewSet(ListModelMixin,CreateModelMixin,GenericViewSet):
     seed = 42
     random.seed(seed)   
-    serializer_class=serializers.NodulePhysicistSerializer
+    serializer_class=serializers.NodulePhysicianSerializer
     def get_serializer_context(self):
         return {"new":self.request.user.username,"user":self.request.user}
     def get_queryset(self):
@@ -228,7 +228,7 @@ class NodulePhysicistViewSet(ListModelMixin,CreateModelMixin,GenericViewSet):
         
         
         
-        # described=models.Nodule.objects.prefetch_related("descriptions").filter(descriptions__physicist_id=self.request.user.id).annotate(isdescribed=Value(True))
+        # described=models.Nodule.objects.prefetch_related("descriptions").filter(descriptions__physician_id=self.request.user.id).annotate(isdescribed=Value(True))
         
         if timesDescribed and timesDescribed=="0":
             numNodules2Times=Value(0)
@@ -287,8 +287,8 @@ class NoduleDescriptionViewSet(ListModelMixin,GenericViewSet):
         
         
         # filtered_descriptions_subquery = models.Nodule.objects.prefetch_related("descriptions").filter(
-        # descriptions__physicist_id=self.request.user.id
-        # ).values("id","name", "image","new",'descriptions__birads',"descriptions__physicist_id")
+        # descriptions__physician_id=self.request.user.id
+        # ).values("id","name", "image","new",'descriptions__birads',"descriptions__physician_id")
 
 
 
@@ -351,15 +351,15 @@ def AIDescription(request, nodule_id):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def Intercorrelation(request,physicist__username):
+def Intercorrelation(request,physician__username):
     user=request.user
     
-    # prefetch=GenericPrefetch("content_object",[models.Physicist.object.all()])
+    # prefetch=GenericPrefetch("content_object",[models.Physician.object.all()])
     #Any user can be compared, but only on nodules the requesting user can see
     visible=models.Description.objects.select_related("user").filter(nodule__in=visible_nodules(user))
     descriptions=visible.filter(user=user)
     desc_serializer=serializers.DescriptionSerializer(descriptions,many=True)
-    descriptions_other=visible.filter(user__username=physicist__username)
+    descriptions_other=visible.filter(user__username=physician__username)
     desc_other_serializer=serializers.DescriptionSerializer(descriptions_other,many=True)
     if len(desc_other_serializer.data) == 0:
         return Response({"error": "Physician not found"}, status=status.HTTP_404_NOT_FOUND)
@@ -371,12 +371,12 @@ def Intercorrelation(request,physicist__username):
 def Intercorrelation_Fleiss(request):
     user=request.user
     
-    # prefetch=GenericPrefetch("content_object",[models.Physicist.object.all()])
+    # prefetch=GenericPrefetch("content_object",[models.Physician.object.all()])
     descriptions=models.Description.objects.select_related("user").filter(user=user)
     desc_serializer=serializers.DescriptionSerializer(descriptions,many=True)
     
     #For the Fleiss kappa we only consider physicians
-    descriptions_other=models.Description.objects.select_related("user").exclude(user=user).filter(user__physicist__isnull=False)
+    descriptions_other=models.Description.objects.select_related("user").exclude(user=user).filter(user__physician__isnull=False)
     desc_other_serializer=serializers.DescriptionSerializer(descriptions_other,many=True)
 
     result = intercorrelation_Fleiss_fn(desc_serializer.data, desc_other_serializer.data, user_id=request.user.id)
@@ -404,20 +404,20 @@ def Statistics(request):
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def Statistics_physician(request,physicist__username):
+def Statistics_physician(request,physician__username):
     user=request.user
     #Only descriptions of nodules the requesting user can see are counted
     visible=models.Description.objects.select_related("user").filter(nodule__in=visible_nodules(user))
     #"Overall" is a reserved username (see core.serializers), so it can not hide a real user
-    if physicist__username=="Overall":
-        descriptions=visible.filter(user__physicist__isnull=False).exclude(user=user)
-        physicians=models.Physicist.objects.exclude(user=user).count()
+    if physician__username=="Overall":
+        descriptions=visible.filter(user__physician__isnull=False).exclude(user=user)
+        physicians=models.Physician.objects.exclude(user=user).count()
         
     else:
         #Statistics can only be compared with radiologists
-        if not models.Physicist.objects.filter(user__username=physicist__username).exists():
+        if not models.Physician.objects.filter(user__username=physician__username).exists():
             return Response({"error": "Physician not found"}, status=status.HTTP_404_NOT_FOUND)
-        descriptions=visible.filter(user__username=physicist__username)
+        descriptions=visible.filter(user__username=physician__username)
         physicians=1
     desc_serializer=serializers.DescriptionSerializer(descriptions,many=True)
     result=statistics_fn(desc_serializer.data)
@@ -430,17 +430,17 @@ def AIExpertPanel(request,nodule_id):
     user=request.user
     get_object_or_404(visible_nodules(user), id=nodule_id)
     #Cogemos todas las descripciones que no pertenezcan a la radióloga, pero que sean de otros radiólogos
-    descriptions_other=models.Description.objects.select_related("user").select_related("nodule").filter(nodule_id=nodule_id).filter(user__physicist__isnull=False).exclude(user=user)
+    descriptions_other=models.Description.objects.select_related("user").select_related("nodule").filter(nodule_id=nodule_id).filter(user__physician__isnull=False).exclude(user=user)
     desc_serializer=serializers.DescriptionSerializer(descriptions_other,many=True)
     result=expertPanel_fn(desc_serializer.data)
     return Response(result)
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-def physician_ground_truth(request,nodule_id,physicist__username):
+def physician_ground_truth(request,nodule_id,physician__username):
     user=request.user
     get_object_or_404(visible_nodules(user), id=nodule_id)
-    physician = User.objects.filter(username=physicist__username).first()
+    physician = User.objects.filter(username=physician__username).first()
     if not physician:
         raise NotFound(detail="physician_not_found")
     #Cogemos las descripciones del usuario
@@ -468,11 +468,11 @@ def private_nodule_image(request, pk, which="image"):
         raise PermissionDenied("You are not authorized to access this image.")
 
     return FileResponse(f.open("rb"))
-# def NodulePhysicistViewSet(request):
-#     notDescribed=models.Nodule.objects.prefetch_related("descriptions").exclude(descriptions__physicist_id=self.request.user.id).annotate(isdescribed=Value(False))
-#     described=models.Nodule.objects.prefetch_related("descriptions").filter(descriptions__physicist_id=self.request.user.id).annotate(isdescribed=Value(True))
+# def NodulePhysicianViewSet(request):
+#     notDescribed=models.Nodule.objects.prefetch_related("descriptions").exclude(descriptions__physician_id=self.request.user.id).annotate(isdescribed=Value(False))
+#     described=models.Nodule.objects.prefetch_related("descriptions").filter(descriptions__physician_id=self.request.user.id).annotate(isdescribed=Value(True))
 #     combination = notDescribed.union(described)
-#     serializer = serializers.NodulePhysicistSerializer(
+#     serializer = serializers.NodulePhysicianSerializer(
 #             combination, many=True, context={"request":request})
 #     return Response(serializer.data)
 

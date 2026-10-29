@@ -5,9 +5,9 @@ from . import views
 
 router=routers.DefaultRouter()
 # router.register("nodules",views.NoduleViewSet)
-router.register("physicists",views.PhysicistViewSet)
+router.register("physicians",views.PhysicianViewSet)
 router.register("descriptions",views.DescriptionmeViewSet, basename="descriptions")
-router.register("nodules",views.NodulePhysicistViewSet, basename="nodules")
+router.register("nodules",views.NodulePhysicianViewSet, basename="nodules")
 router.register("nodules-descriptions",views.NoduleDescriptionViewSet, basename="nodules-descriptions")
 # router.register("nodules/<int:nodule_id>/description",views.DescriptionViewSet,basename="nodule-description")
 
@@ -18,16 +18,16 @@ urlpatterns = [
     path("", include(router.urls)),
     # path("nodules/<int:nodule_id>/description/",views.DescriptionViewSet.as_view),
     path("", include(nodules_router.urls)),
-    path("<str:physicist__username>/nodules/<int:nodule_id>/descriptions",views.Description_detail),
+    path("<str:physician__username>/nodules/<int:nodule_id>/descriptions",views.Description_detail),
     path("<str:AI_name>/descriptions",views.DescriptionAIViewSet),
-    path("<str:physicist__username>/intercorrelation",views.Intercorrelation),
+    path("<str:physician__username>/intercorrelation",views.Intercorrelation),
     path("intracorrelation",views.Intracorrelation),
     path("intercorrelation_Fleiss",views.Intercorrelation_Fleiss),
     path("statistics",views.Statistics),
-    path("<str:physicist__username>/statistics",views.Statistics_physician),
+    path("<str:physician__username>/statistics",views.Statistics_physician),
     path("nodules/<int:nodule_id>/AIDescription",views.AIDescription),
     path("nodules/<int:nodule_id>/expert-panel",views.AIExpertPanel),
-    path("nodules/<int:nodule_id>/<str:physicist__username>/physician_ground_truth",views.physician_ground_truth),
+    path("nodules/<int:nodule_id>/<str:physician__username>/physician_ground_truth",views.physician_ground_truth),
     path("nodules/<int:pk>/image/", views.private_nodule_image, {"which": "image"}, name="nodule-image"),
     path("nodules/<int:pk>/full-image/", views.private_nodule_image, {"which": "full"}, name="nodule-full-image"),
     path("AIDetection",views.AIDetection),
