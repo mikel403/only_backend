@@ -7,7 +7,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "WebApp.settings.dev")
 django.setup()
 
 from django.contrib.auth.models import User
-from nodule.models import Physicist
+from nodule.models import Physician
 
 
 def crear_physician(username, password, experience=None, profession=None):
@@ -19,7 +19,7 @@ def crear_physician(username, password, experience=None, profession=None):
     )  # para asegurarse de que la contraseña se guarde correctamente
     user.save()
 
-    physician, _ = Physicist.objects.get_or_create(user=user)
+    physician, _ = Physician.objects.get_or_create(user=user)
     # Solo setear si viene informado (no obligatorio)
     if experience is not None:
         physician.experience = int(experience)
@@ -29,7 +29,7 @@ def crear_physician(username, password, experience=None, profession=None):
     physician.save()
 
     print(
-        f"✅ Usuario '{username}' creado/actualizado y vinculado como Physicist."
+        f"✅ Usuario '{username}' creado/actualizado y vinculado como Physician."
         f" experience={physician.experience} profession={physician.profession}"
     )
 

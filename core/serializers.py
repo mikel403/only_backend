@@ -23,4 +23,4 @@ class UserSerializer(BaseUserSerializer):
         }
     def get_is_physician(self, obj):
         # Si tienes OneToOne Physician(user=...)
-        return hasattr(obj, "physicist")
+        return hasattr(obj, "physician")
