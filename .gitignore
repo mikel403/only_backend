@@ -65,3 +65,8 @@ build/
 # Docker (optional)
 ######################################
 *.pid
+
+# Bases de datos y volcados SQL
+*.sql
+*.sql.gz
+*.dump
