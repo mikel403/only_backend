@@ -503,3 +503,75 @@ class DescriptionAdminTests(TestCase):
         self.assertEqual(rows[1][:4], [str(self.old.id), "2026-03-02 10:00:00", "expert", "radiologist"])
         self.assertEqual(rows[2][2:4], ["AI_test", "ai"])
         self.assertEqual(len(rows), 3)
+
+
+class UserAdminTests(TestCase):
+    url = "/admin/auth/user/"
+
+    @classmethod
+    def setUpTestData(cls):
+        User = get_user_model()
+        cls.admin = User.objects.create_superuser(username="admin", password="x")
+        cls.expert = User.objects.create_user(username="expert", password="x")
+        models.Physicist.objects.create(user=cls.expert, experience=10)
+        cls.student = User.objects.create_user(username="student", password="x")
+        cls.test_user = User.objects.create_user(username="TestUser", password="x")
+        models.TestUser.objects.create(user=cls.test_user)
+        public = models.Nodule.objects.create(name="public")
+        own = [models.Nodule.objects.create(name=f"own{i}", new="expert") for i in range(2)]
+        # Three descriptions of two different nodules
+        for nodule in (public, public, own[0]):
+            models.Description.objects.create(user=cls.expert, nodule=nodule, birads="3")
+        madrid = zoneinfo.ZoneInfo("Europe/Madrid")
+        times = [datetime(2026, 1, 5, tzinfo=madrid), datetime(2026, 2, 5, tzinfo=madrid), datetime(2026, 3, 5, tzinfo=madrid)]
+        for description, time in zip(models.Description.objects.order_by("id"), times):
+            models.Description.objects.filter(id=description.id).update(time=time)
+        cls.times = times
+
+    def setUp(self):
+        self.client.force_login(self.admin)
+
+    def rows(self, url, **params):
+        response = self.client.get(url, params)
+        self.assertEqual(response.status_code, 200)
+        # Rows are users in the user list and Physicist objects in the radiologist list
+        return {(row.user if isinstance(row, models.Physicist) else row).username: row for row in response.context["cl"].result_list}
+
+    def test_activity_columns(self):
+        rows = self.rows(self.url)
+        expert, student = rows["expert"], rows["student"]
+        self.assertEqual(expert.num_descriptions, 3)
+        self.assertEqual(expert.num_nodules_described, 2)
+        self.assertEqual(expert.first_description, self.times[0])
+        self.assertEqual(expert.last_description, self.times[2])
+        self.assertEqual(expert.num_uploaded, 2)
+        self.assertEqual((student.num_descriptions, student.num_uploaded), (0, 0))
+
+    def test_links_open_the_filtered_lists(self):
+        content = self.client.get(self.url).content.decode()
+        self.assertIn(f"/admin/nodule/description/?user__id__exact={self.expert.id}", content)
+        self.assertIn("/admin/nodule/nodule/?new__exact=expert", content)
+        self.assertEqual(self.client.get(f"/admin/nodule/description/?user__id__exact={self.expert.id}").status_code, 200)
+        response = self.client.get("/admin/nodule/nodule/?new__exact=expert")
+        self.assertEqual(len(response.context["cl"].result_list), 2)
+
+    def test_role_filter(self):
+        self.assertEqual(set(self.rows(self.url, role="radiologist")), {"expert"})
+        self.assertEqual(set(self.rows(self.url, role="test")), {"TestUser"})
+        self.assertEqual(set(self.rows(self.url, role="user")), {"admin", "student"})
+
+    def test_make_radiologist_skips_test_users(self):
+        self.client.post(self.url, {
+            "action": "make_radiologist",
+            "_selected_action": [self.student.id, self.test_user.id, self.expert.id],
+        })
+        self.assertTrue(models.Physicist.objects.filter(user=self.student).exists())
+        self.assertFalse(models.Physicist.objects.filter(user=self.test_user).exists())
+        self.assertEqual(models.Physicist.objects.get(user=self.expert).experience, 10)
+
+    def test_radiologist_list_shows_activity(self):
+        rows = self.rows("/admin/nodule/physicist/")
+        self.assertEqual(set(rows), {"expert"})
+        self.assertEqual(rows["expert"].num_descriptions, 3)
+        self.assertEqual(rows["expert"].num_uploaded, 2)
+        self.assertEqual(self.client.get(f"/admin/nodule/physicist/{self.expert.id}/change/").status_code, 200)
