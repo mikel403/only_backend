@@ -25,6 +25,7 @@ load_dotenv(BASE_DIR / ".env")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
+    "rangefilter",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -114,7 +115,8 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = "en-us"
 
-TIME_ZONE = "UTC"
+#Dates are stored in UTC and shown in Spanish time
+TIME_ZONE = "Europe/Madrid"
 
 USE_I18N = True
 
